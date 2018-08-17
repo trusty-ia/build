@@ -27,7 +27,7 @@ LK_ENV_VAR += BUILDROOT=$(TOP_DIR)/out/trusty/
 IKGT_ENV_VAR += COMPILE_TOOLCHAIN=$(IKGT_TOOLCHAIN_PATH)/x86_64-linux-android-
 IKGT_ENV_VAR += BUILD_DIR=$(TOP_DIR)/out/ikgt/
 
-export TARGET_PRODUCT=iot_joule
+export TRUSTY_REF_TARGET=iot_joule
 
 .PHONY: all ikgt trusty clean
 
@@ -46,5 +46,5 @@ ikgt:
 	$(IKGT_ENV_VAR) $(MAKE) -C ikgt
 
 clean:
-	$(TRUSTY_ENV_VAR) $(MAKE) -C trusty spotless
+	$(LK_ENV_VAR) $(MAKE) -C trusty spotless
 	$(IKGT_ENV_VAR)   $(MAKE) -C ikgt clean
