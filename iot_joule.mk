@@ -17,32 +17,32 @@
 TOP_DIR = $(shell pwd)
 
 TOOLCHAIN_ROOT ?= $(TOP_DIR)/toolchain
-LK_TOOLCHAIN_PATH   := $(TOOLCHAIN_ROOT)/elf/x86_64-elf-4.9.1-Linux-x86_64/bin
 IKGT_TOOLCHAIN_PATH := $(TOOLCHAIN_ROOT)/gcc/x86_64-linux-android-4.9/bin
 
-LK_ENV_VAR += TOOLCHAIN_PREFIX=$(LK_TOOLCHAIN_PATH)/x86_64-elf-
 LK_ENV_VAR += ARCH_x86_64_TOOLCHAIN_INCLUDED=1
 LK_ENV_VAR += BUILDROOT=$(TOP_DIR)/out/trusty/
+LK_ENV_VAR += CLANG_BINDIR=$(TOOLCHAIN_ROOT)/clang/host/linux-x86/clang-4691093/bin
+LK_ENV_VAR += ARCH_x86_64_TOOLCHAIN_PREFIX=$(TOOLCHAIN_ROOT)/gcc/x86_64-linux-android-4.9/bin/x86_64-linux-android-
 
 IKGT_ENV_VAR += COMPILE_TOOLCHAIN=$(IKGT_TOOLCHAIN_PATH)/x86_64-linux-android-
 IKGT_ENV_VAR += BUILD_DIR=$(TOP_DIR)/out/ikgt/
 
-export TARGET_PRODUCT=iot_joule
+export TRUSTY_REF_TARGET=iot_joule
 
 .PHONY: all ikgt trusty clean
 
 all: ikgt trusty
 
 trusty:
-	@echo ********************
-	@echo build trusty os...
-	@echo ********************
+	@echo '****************************************************************'
+	@echo '*   build trusty os...'
+	@echo '****************************************************************'
 	$(LK_ENV_VAR) $(MAKE) -C trusty sand-x86-64
 
 ikgt:
-	@echo ********************
-	@echo build ikgt core..
-	@echo ********************
+	@echo '****************************************************************'
+	@echo '*   build ikgt core...'
+	@echo '****************************************************************'
 	$(IKGT_ENV_VAR) $(MAKE) -C ikgt
 
 clean:
