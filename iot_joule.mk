@@ -37,7 +37,7 @@ trusty:
 	@echo '****************************************************************'
 	@echo '*   apply aosp diff patches...'
 	@echo '****************************************************************'
-	@build/aosp_diff/applypatch.sh
+	@build/aosp_diff/applypatch.sh $(TRUSTY_REF_TARGET)
 
 	@echo '****************************************************************'
 	@echo '*   build trusty os...'
