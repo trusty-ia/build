@@ -1,7 +1,9 @@
 #!/bin/bash
 
+project_name=$1
+
 function applypatch(){
-    git_dir=`echo $(dirname $1) | sed 's/\/build\/aosp_diff//g'`
+    git_dir=`echo $(dirname $1) | sed 's/\/build\/aosp_diff\/'${project_name}'//g'`
     cd $git_dir
     change_id_value=`grep "Change-Id: " $1`
     patchexist=`git log | grep "$change_id_value"`
@@ -31,9 +33,10 @@ function scan_patch_files(){
     done
 }
 
-echo "Apply patches ..."
+if [ $# -ne 0 ] ; then
+    echo "Apply patches ..."
 
-scan_patch_files $(pwd)"/build/aosp_diff"
+    scan_patch_files $(pwd)"/build/aosp_diff/"$project_name
 
-echo "Apply patches done."
-
+    echo "Apply patches done."
+fi
