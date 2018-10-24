@@ -5,8 +5,8 @@ project_name=$1
 function applypatch(){
     git_dir=`echo $(dirname $1) | sed 's/\/build\/aosp_diff\/'${project_name}'//g'`
     cd $git_dir
-    change_id_value=`grep "Change-Id: " $1`
-    patchexist=`git log | grep "$change_id_value"`
+    date_value=`grep "Date: " $1`
+    patchexist=`git log --pretty=format:"Date: %aD" | grep "$date_value"`
 
     file=$1
     if [ -z "$patchexist" ] ; then
