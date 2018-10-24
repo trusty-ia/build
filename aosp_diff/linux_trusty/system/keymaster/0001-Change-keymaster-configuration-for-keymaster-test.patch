@@ -1,0 +1,47 @@
+From 81bfe183cd9d4ba9134e05643770e65798dca57b Mon Sep 17 00:00:00 2001
+From: Jingdong Lu <jingdong.lu@intel.com>
+Date: Tue, 23 Oct 2018 16:41:31 +0800
+Subject: [PATCH] Change keymaster configuration for keymaster test
+
+Keymaster test will need keymaster_configuration.cpp, so modifiy it for compilation.
+
+Signed-off-by: Jingdong Lu <jingdong.lu@intel.com>
+---
+ android_keymaster/keymaster_configuration.cpp | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/android_keymaster/keymaster_configuration.cpp b/android_keymaster/keymaster_configuration.cpp
+index ac6d3c1..c39656d 100644
+--- a/android_keymaster/keymaster_configuration.cpp
++++ b/android_keymaster/keymaster_configuration.cpp
+@@ -22,13 +22,16 @@
+ #include <regex.h>
+ 
+ #define LOG_TAG "keymaster"
+-#include <cutils/log.h>
++//#include <cutils/log.h>
++
++#define ALOGE printf
++#define ALOGI printf
+ 
+ #ifndef KEYMASTER_UNIT_TEST_BUILD
+ #include <cutils/properties.h>
+ #else
+ #define PROPERTY_VALUE_MAX 80 /* Value doesn't matter */
+-void property_get(const char* /* prop_name */, char* /* prop */, const char* /* default */) {}
++static void property_get(const char* /* prop_name */, char* /* prop */, const char* /* default */) {}
+ #endif
+ 
+ #include <keymaster/authorization_set.h>
+@@ -61,7 +64,7 @@ uint32_t match_to_uint32(const char* expression, const regmatch_t& match) {
+ 
+ }  // anonymous namespace
+ 
+-keymaster_error_t ConfigureDevice(keymaster2_device_t* dev, uint32_t os_version,
++static keymaster_error_t ConfigureDevice(keymaster2_device_t* dev, uint32_t os_version,
+                                   uint32_t os_patchlevel) {
+     AuthorizationSet config_params(AuthorizationSetBuilder()
+                                        .Authorization(keymaster::TAG_OS_VERSION, os_version)
+-- 
+2.7.4
+
