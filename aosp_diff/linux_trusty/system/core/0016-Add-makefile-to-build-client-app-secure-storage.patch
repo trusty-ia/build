@@ -1,0 +1,195 @@
+From 46bb8010e293e49196588d4721ace26c38eb7e0d Mon Sep 17 00:00:00 2001
+From: "Chen, Gang G" <gang.g.chen@intel.com>
+Date: Fri, 12 Oct 2018 10:33:37 +0800
+Subject: [PATCH] Add makefile to build client app secure storage
+
+Signed-off-by: Chen, Gang G <gang.g.chen@intel.com>
+---
+ trusty/storage/lib/Makefile     | 41 +++++++++++++++++++++++++++++++++++++++++
+ trusty/storage/lib/storage.c    |  5 +++--
+ trusty/storage/proxy/Makefile   | 36 ++++++++++++++++++++++++++++++++++++
+ trusty/storage/proxy/log.h      | 12 +++++++++++-
+ trusty/storage/proxy/proxy.c    |  3 ---
+ trusty/storage/proxy/rpmb-sim.c |  4 ++--
+ 6 files changed, 93 insertions(+), 8 deletions(-)
+ create mode 100644 trusty/storage/lib/Makefile
+ create mode 100644 trusty/storage/proxy/Makefile
+
+diff --git a/trusty/storage/lib/Makefile b/trusty/storage/lib/Makefile
+new file mode 100644
+index 0000000..aa0c609
+--- /dev/null
++++ b/trusty/storage/lib/Makefile
+@@ -0,0 +1,41 @@
++export OUTDIR = $(BUILD_DIR)lib/
++
++SHAREDLIB := libinteltrustystorage.so
++STATICLIB := libinteltrustystorage.a
++
++AR := ar
++
++INCLUDES = -Iinclude \
++	-I../../libtrusty/include \
++	-I../interface/include
++
++CFLAGS += $(INCLUDES) -g -n
++
++LDFLAGS += -lm -lrt -lpthread -L$(OUTDIR) -ltrusty -fPIC -fpic
++
++SRC_FILES := *c
++
++OBJS := $(SRC_FILES:%.c=%.o)
++
++.PHONY: all clean
++
++all: $(SHAREDLIB) $(STATICLIB)
++
++%.o: %.c
++	@echo --- $(CC) $<
++	$(CC) $(CFLAGS) -c $< -o $(OUTDIR)$@
++
++$(SHAREDLIB): $(OBJS)
++	@echo --- Linking Shared library $@
++	$(CC) $(INCLUDES) -shared -o $(OUTDIR)$@ $(OBJS) $(LDFLAGS)
++
++$(STATICLIB): $(OBJS)
++	@echo --- Linking Static library $@
++	$(AR) rcs -o $(OUTDIR)$@ $(OBJS)
++
++
++clean:
++	@echo --- Cleaning all build artifact
++	rm -f $(shell find -name "*.o" -and -not -name ".*")
++	rm -f $(OUTDIR)$(SHAREDLIB)
++	rm -f $(OUTDIR)$(STATICLIB)
+diff --git a/trusty/storage/lib/storage.c b/trusty/storage/lib/storage.c
+index 915bc17..ba886d7 100644
+--- a/trusty/storage/lib/storage.c
++++ b/trusty/storage/lib/storage.c
+@@ -22,11 +22,12 @@
+ #include <stdint.h>
+ #include <string.h>
+ #include <sys/uio.h>
+-
+-#include <log/log.h>
++#include <stdio.h>
+ #include <trusty/tipc.h>
+ #include <trusty/lib/storage.h>
+ 
++#define ALOGE printf
++#define ALOGV printf
+ #define MAX_CHUNK_SIZE 4040
+ 
+ static inline file_handle_t make_file_handle(storage_session_t s, uint32_t fid)
+diff --git a/trusty/storage/proxy/Makefile b/trusty/storage/proxy/Makefile
+new file mode 100644
+index 0000000..53a3a75
+--- /dev/null
++++ b/trusty/storage/proxy/Makefile
+@@ -0,0 +1,36 @@
++export OUTDIR = $(BUILD_DIR)bin/
++
++$(shell mkdir -p $(OUTDIR))
++
++TARGET := storageproxyd
++
++INCLUDES = -Iinclude \
++	-I../../libtrusty/include \
++	-I../lib/include \
++	-I../interface/include
++
++CFLAGS += $(INCLUDES) -g -n
++
++
++LDFLAGS += -lm -lrt -lpthread -L$(BUILD_DIR)lib -linteltrustystorage -ltrusty -lssl -lcrypto -fPIC -fpic
++
++SRC_FILES := *c
++
++OBJS := $(SRC_FILES:%.c=%.o)
++
++.PHONY: all clean
++
++all: $(TARGET)
++
++%.o: %.c
++	@echo --- $(CC) $<
++	$(CC) $(CFLAGS) -c $< -o $(OUTDIR)$@
++
++$(TARGET): $(OBJS)
++	@echo --- Linking target $@
++	$(CC) $(INCLUDES) -o $(OUTDIR)$@ $(OBJS) $(LDFLAGS)
++
++clean:
++	@echo --- Cleaning all build artifact
++	rm -f $(shell find -name "*.o" -and -not -name ".*")
++	rm -rf $(OUTDIR)
+diff --git a/trusty/storage/proxy/log.h b/trusty/storage/proxy/log.h
+index c81beab..1837825 100644
+--- a/trusty/storage/proxy/log.h
++++ b/trusty/storage/proxy/log.h
+@@ -13,8 +13,18 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++#include <stdio.h>
+ 
+ #define LOG_TAG "storageproxyd"
++#define ALOGE printf
++#define ALOGV printf
++#define ALOGI printf
++#define ALOGW printf
+ 
+-#include <log/log.h>
++#define TEMP_FAILURE_RETRY(exp) ({         \
++    typeof (exp) _rc;                      \
++    do {                                   \
++        _rc = (exp);                       \
++    } while (_rc == -1 && errno == EINTR); \
++    _rc; })
+ 
+diff --git a/trusty/storage/proxy/proxy.c b/trusty/storage/proxy/proxy.c
+index d7682c2..82ea054 100644
+--- a/trusty/storage/proxy/proxy.c
++++ b/trusty/storage/proxy/proxy.c
+@@ -19,7 +19,6 @@
+ #include <stdint.h>
+ #include <string.h>
+ #include <stdlib.h>
+-#include <sys/capability.h>
+ #include <sys/sysmacros.h>
+ #include <sys/prctl.h>
+ #include <sys/types.h>
+@@ -28,8 +27,6 @@
+ 
+ #include <linux/major.h>
+ 
+-#include <cutils/android_filesystem_config.h>
+-
+ #include "ipc.h"
+ #include "log.h"
+ #include "rpmb.h"
+diff --git a/trusty/storage/proxy/rpmb-sim.c b/trusty/storage/proxy/rpmb-sim.c
+index eb2ce9f..a961056 100644
+--- a/trusty/storage/proxy/rpmb-sim.c
++++ b/trusty/storage/proxy/rpmb-sim.c
+@@ -99,7 +99,7 @@ static uint8_t read_buf[4096];
+ #define TEEDATA_BLOCK_COUNT	(TEEDATA_SIZE/256)
+ 
+ 
+-inline uint32_t swap32(uint32_t val)
++static inline uint32_t swap32(uint32_t val)
+ {
+ 	return ((val & (uint32_t)0x000000ffUL) << 24)
+ 		| ((val & (uint32_t)0x0000ff00UL) <<  8)
+@@ -107,7 +107,7 @@ inline uint32_t swap32(uint32_t val)
+ 		| ((val & (uint32_t)0xff000000UL) >> 24);
+ }
+ 
+-inline uint16_t swap16(uint16_t val)
++static inline uint16_t swap16(uint16_t val)
+ {
+ 	return ((val & (uint16_t)0x00ffU) << 8)
+ 		| ((val & (uint16_t)0xff00U) >> 8);
+-- 
+2.7.4
+
