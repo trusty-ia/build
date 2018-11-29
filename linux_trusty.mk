@@ -20,7 +20,7 @@ TOOLCHAIN_ROOT ?= $(TOP_DIR)/toolchain
 
 LK_ENV_VAR += ARCH_x86_64_TOOLCHAIN_INCLUDED=1
 LK_ENV_VAR += BUILDROOT=$(TOP_DIR)/out/trusty/
-LK_ENV_VAR += CLANG_BINDIR=$(TOOLCHAIN_ROOT)/clang/host/linux-x86/clang-4691093/bin
+LK_ENV_VAR += CLANG_BINDIR=$(TOOLCHAIN_ROOT)/clang/host/linux-x86/clang-4679922/bin
 LK_ENV_VAR += ARCH_x86_64_TOOLCHAIN_PREFIX=$(TOOLCHAIN_ROOT)/gcc/x86_64-linux-android-4.9/bin/x86_64-linux-android-
 
 TRUSTY_CA_ENV_VAR += BUILD_DIR=$(TOP_DIR)/out/trusty_ca/
