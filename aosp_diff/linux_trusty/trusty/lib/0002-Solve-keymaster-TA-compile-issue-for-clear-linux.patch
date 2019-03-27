@@ -1,0 +1,31 @@
+From 8245e49ff7082d3ef9f636ee63c7eec45e33cf6b Mon Sep 17 00:00:00 2001
+From: Gang G Chen <gang.g.chen@intel.com>
+Date: Wed, 27 Mar 2019 05:29:12 +0000
+Subject: [PATCH] Solve keymaster TA compile issue for clear linux
+
+Revision used by keymaster is refs/tags/android-o-mr1-iot-release-1.0.4
+
+Signed-off-by: Gang G Chen <gang.g.chen@intel.com>
+---
+ lib/libstdc++-trusty/new.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/lib/libstdc++-trusty/new.cpp b/lib/libstdc++-trusty/new.cpp
+index 5a26cf2..c00f396 100644
+--- a/lib/libstdc++-trusty/new.cpp
++++ b/lib/libstdc++-trusty/new.cpp
+@@ -52,3 +52,11 @@ void  operator delete(void* ptr, const std::nothrow_t&) {
+ void  operator delete[](void* ptr, const std::nothrow_t&) {
+     free(ptr);
+ }
++
++void operator delete(void *ptr, const std::size_t) {
++    free(ptr);
++}
++
++void operator delete[](void *ptr, const std::size_t) {
++    free(ptr);
++}
+-- 
+2.21.0
+
