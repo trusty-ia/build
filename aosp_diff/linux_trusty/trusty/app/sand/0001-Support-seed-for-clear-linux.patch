@@ -1,0 +1,62 @@
+From 0095f17af6233c4245b5ea68db981504db673260 Mon Sep 17 00:00:00 2001
+From: Gang G Chen <gang.g.chen@intel.com>
+Date: Wed, 27 Mar 2019 05:40:18 +0000
+Subject: [PATCH] Support seed for clear linux
+
+Signed-off-by: Gang G Chen <gang.g.chen@intel.com>
+---
+ hwcrypto/platform/provider_linux_trusty.c         | 1 +
+ hwcrypto/platform/solutions/provider_fixed_seed.c | 8 ++++----
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+ create mode 120000 hwcrypto/platform/provider_linux_trusty.c
+
+diff --git a/hwcrypto/platform/provider_linux_trusty.c b/hwcrypto/platform/provider_linux_trusty.c
+new file mode 120000
+index 0000000..039ea73
+--- /dev/null
++++ b/hwcrypto/platform/provider_linux_trusty.c
+@@ -0,0 +1 @@
++provider_project-celadon_64.c
+\ No newline at end of file
+diff --git a/hwcrypto/platform/solutions/provider_fixed_seed.c b/hwcrypto/platform/solutions/provider_fixed_seed.c
+index c8c6b82..b81717a 100644
+--- a/hwcrypto/platform/solutions/provider_fixed_seed.c
++++ b/hwcrypto/platform/solutions/provider_fixed_seed.c
+@@ -42,7 +42,7 @@
+ #include "trusty_syscalls_x86.h"
+ 
+ #define LOCAL_TRACE  1
+-#define LOG_TAG      "provider_fixed_seed"
++#define LOG_TAG      "provider_linux_trusty"
+ 
+ extern struct crypto_context g_crypto_ctx;
+ extern const uint8_t trk_aad[16];
+@@ -150,7 +150,7 @@ uint32_t get_rpmb_ss_auth_key(const struct hwkey_keyslot *slot,
+ {
+ 	int rc = 0;
+ 	trusty_device_info_t dev_info;
+-	uint8_t invalid_key[64] = {0};
++//	uint8_t invalid_key[64] = {0};
+ 
+ 	assert(kbuf);
+ 	assert(klen);
+@@ -163,14 +163,14 @@ uint32_t get_rpmb_ss_auth_key(const struct hwkey_keyslot *slot,
+ 		rc = HWKEY_ERR_GENERIC;
+ 		goto clear_dev_info;
+ 	}
+-
++#if 0
+ 	if (!CRYPTO_memcmp(dev_info.sec_info.rpmb_key[0], invalid_key, sizeof(invalid_key)))
+ 	{
+ 			TLOGE("%s: the RPMB key is unavailable.\n", __func__);
+ 			rc = HWKEY_ERR_GENERIC;
+ 			goto clear_dev_info;
+ 	}
+-
++#endif
+ 	memcpy_s(kbuf, RPMB_SS_AUTH_KEY_SIZE, dev_info.sec_info.rpmb_key[0], RPMB_SS_AUTH_KEY_SIZE);
+ 	*klen = RPMB_SS_AUTH_KEY_SIZE;
+ 
+-- 
+2.21.0
+

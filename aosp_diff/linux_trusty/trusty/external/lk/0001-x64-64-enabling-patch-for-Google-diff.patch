@@ -1,14 +1,61 @@
-From a641dd35bc4baf83d50749d15b24407aa6096423 Mon Sep 17 00:00:00 2001
-From: Zhong,Fangjian <fangjian.zhong@intel.com>
+From 1d37848ed62781a3e8d15b417898b3851d1a04dd Mon Sep 17 00:00:00 2001
+From: "Zhong,Fangjian" <fangjian.zhong@intel.com>
 Date: Mon, 23 Apr 2018 08:20:33 +0800
 Subject: [PATCH] x64-64 enabling patch for Google diff
 
 Change-Id: I2b4c0d513d24b6d913d0273a31ee5f2485d9a76b
 Signed-off-by: Zhong,Fangjian <fangjian.zhong@intel.com>
+Signed-off-by: Gang G Chen <gang.g.chen@intel.com>
 ---
+ arch/x86/32/mmu.c                             |   8 +-
+ arch/x86/64/exceptions.S                      |  21 +-
+ arch/x86/64/kernel.ld                         |   4 +-
+ arch/x86/64/mmu.c                             | 131 ++++++++----
+ arch/x86/64/ops.S                             |  16 +-
+ arch/x86/64/start.S                           |  21 +-
+ arch/x86/64/usercopy.c                        | 111 ++++++++++
+ arch/x86/arch.c                               | 172 +++++++++++-----
+ arch/x86/cache.c                              |  13 ++
+ arch/x86/descriptor.c                         |  79 +++++---
+ arch/x86/faults.c                             |  10 +-
+ arch/x86/fpu.c                                |  55 ++---
+ arch/x86/gdt.S                                |  63 +++---
+ arch/x86/include/arch/arch_ops.h              |  55 ++++-
+ arch/x86/include/arch/arch_thread.h           |  19 +-
+ arch/x86/include/arch/aspace.h                |   6 +-
+ .../x86/include/arch/local_apic.h             |  27 ++-
+ arch/x86/include/arch/spinlock.h              |   5 +
+ arch/x86/include/arch/x86.h                   |  82 +++++---
+ arch/x86/include/arch/x86/descriptor.h        |  35 ++--
+ arch/x86/include/arch/x86/mmu.h               |   6 +-
+ arch/x86/include/arch/x86/mp.h                |  55 +++++
+ arch/x86/local_apic.c                         | 190 ++++++++++++++++++
+ arch/x86/rules.mk                             |  26 ++-
+ arch/x86/thread.c                             |  37 +---
+ arch/x86/toolchain.mk                         |  19 +-
+ engine.mk                                     |  13 +-
+ include/arch/ops.h                            |   6 +
+ include/arch/usercopy.h                       |   3 +-
+ lib/libc/include/string.h                     |   2 +
+ lib/libc/rules.mk                             |   7 +
+ .../string/arch/{x86-64 => x86/64}/memcpy.S   |   0
+ .../arch/x86/{memcpy.S => 64/memcpy_s.c}      |  27 +--
+ .../string/arch/{x86-64 => x86/64}/memset.S   |   0
+ .../string/arch/{x86-64 => x86/64}/rules.mk   |   5 +-
+ lib/libc/string/arch/x86/rules.mk             |  12 +-
+ make/module.mk                                |  20 ++
+ 37 files changed, 1042 insertions(+), 319 deletions(-)
+ create mode 100644 arch/x86/64/usercopy.c
+ rename lib/libc/string/arch/x86/memset.S => arch/x86/include/arch/local_apic.h (74%)
+ create mode 100644 arch/x86/include/arch/x86/mp.h
+ create mode 100644 arch/x86/local_apic.c
+ rename lib/libc/string/arch/{x86-64 => x86/64}/memcpy.S (100%)
+ rename lib/libc/string/arch/x86/{memcpy.S => 64/memcpy_s.c} (72%)
+ rename lib/libc/string/arch/{x86-64 => x86/64}/memset.S (100%)
+ rename lib/libc/string/arch/{x86-64 => x86/64}/rules.mk (59%)
 
 diff --git a/arch/x86/32/mmu.c b/arch/x86/32/mmu.c
-index 4ff7daa..253626f 100644
+index 4ff7daad..253626ff 100644
 --- a/arch/x86/32/mmu.c
 +++ b/arch/x86/32/mmu.c
 @@ -1,6 +1,6 @@
@@ -19,7 +66,7 @@ index 4ff7daa..253626f 100644
   * Copyright (c) 2016 Travis Geiselbrecht
   *
   * Permission is hereby granted, free of charge, to any person obtaining
-@@ -623,9 +623,9 @@
+@@ -623,9 +623,9 @@ void x86_mmu_early_init(void)
      x86_set_cr4(cr4);
  
      /* Set NXE bit in MSR_EFER*/
@@ -33,7 +80,7 @@ index 4ff7daa..253626f 100644
  
      /* unmap the lower identity mapping */
 diff --git a/arch/x86/64/exceptions.S b/arch/x86/64/exceptions.S
-index a8aaf6d..d81c6e8 100644
+index a8aaf6df..d81c6e8c 100644
 --- a/arch/x86/64/exceptions.S
 +++ b/arch/x86/64/exceptions.S
 @@ -1,6 +1,6 @@
@@ -53,7 +100,7 @@ index a8aaf6d..d81c6e8 100644
  #define NUM_EXC 0x14
  
  .text
-@@ -38,11 +38,11 @@
+@@ -38,11 +38,11 @@ _isr:
  .set isr_stub_start, .
  
  .if i == 8 || (i >= 10 && i <= 14) || i == 17
@@ -67,7 +114,7 @@ index a8aaf6d..d81c6e8 100644
          pushq $0                                /* fill in error code in iframe */
          pushq $i                                /* interrupt number */
          jmp interrupt_common
-@@ -58,7 +58,12 @@
+@@ -58,7 +58,12 @@ _isr:
  .fill 256
  
  interrupt_common:
@@ -80,7 +127,7 @@ index a8aaf6d..d81c6e8 100644
      /* save general purpose registers */
      pushq %r15
      pushq %r14
-@@ -97,6 +102,12 @@
+@@ -97,6 +102,12 @@ interrupt_common:
      popq %r14
      popq %r15
  
@@ -93,7 +140,7 @@ index a8aaf6d..d81c6e8 100644
      /* drop vector number and error code*/
      addq $16, %rsp
      iretq
-@@ -137,7 +148,7 @@
+@@ -137,7 +148,7 @@ DATA(_idtr)
  DATA(_idt)
  
  .set i, 0
@@ -103,7 +150,7 @@ index a8aaf6d..d81c6e8 100644
      .short CODE_64_SELECTOR   /* selector */
      .byte  0
 diff --git a/arch/x86/64/kernel.ld b/arch/x86/64/kernel.ld
-index f06d1a3..27d280c 100644
+index f06d1a3d..27d280c4 100644
 --- a/arch/x86/64/kernel.ld
 +++ b/arch/x86/64/kernel.ld
 @@ -1,7 +1,7 @@
@@ -125,7 +172,7 @@ index f06d1a3..27d280c 100644
  {
      . = %KERNEL_BASE% + %KERNEL_LOAD_OFFSET%;
 diff --git a/arch/x86/64/mmu.c b/arch/x86/64/mmu.c
-index 60a10c8..006abf3 100644
+index 60a10c8d..006abf3d 100644
 --- a/arch/x86/64/mmu.c
 +++ b/arch/x86/64/mmu.c
 @@ -1,6 +1,6 @@
@@ -160,7 +207,7 @@ index 60a10c8..006abf3 100644
  
  /**
   * @brief  check if the virtual address is aligned and canonical
-@@ -146,7 +150,11 @@
+@@ -146,7 +150,11 @@ static inline uint64_t get_pfn_from_pte(uint64_t pte)
  {
      uint64_t pfn;
  
@@ -172,7 +219,7 @@ index 60a10c8..006abf3 100644
      return pfn;
  }
  
-@@ -174,8 +182,14 @@
+@@ -174,8 +182,14 @@ arch_flags_t get_x86_arch_flags(arch_flags_t flags)
      if (flags & ARCH_MMU_FLAG_PERM_USER)
          arch_flags |= X86_MMU_PG_U;
  
@@ -189,7 +236,7 @@ index 60a10c8..006abf3 100644
  
      if (flags & ARCH_MMU_FLAG_PERM_NO_EXECUTE)
          arch_flags |= X86_MMU_PG_NX;
-@@ -196,8 +210,13 @@
+@@ -196,8 +210,13 @@ uint get_arch_mmu_flags(arch_flags_t flags)
      if (flags & X86_MMU_PG_U)
          mmu_flags |= ARCH_MMU_FLAG_PERM_USER;
  
@@ -204,7 +251,7 @@ index 60a10c8..006abf3 100644
  
      if (flags & X86_MMU_PG_NX)
          mmu_flags |= ARCH_MMU_FLAG_PERM_NO_EXECUTE;
-@@ -397,7 +416,7 @@
+@@ -397,7 +416,7 @@ status_t x86_mmu_add_mapping(map_addr_t pml4, map_addr_t paddr,
                               vaddr_t vaddr, arch_flags_t mmu_flags)
  {
      uint32_t pd_new = 0, pdp_new = 0;
@@ -213,7 +260,7 @@ index 60a10c8..006abf3 100644
      map_addr_t *m = NULL;
      status_t ret = NO_ERROR;
  
-@@ -443,14 +462,31 @@
+@@ -443,8 +462,9 @@ status_t x86_mmu_add_mapping(map_addr_t pml4, map_addr_t paddr,
      if (!pd_new)
          pde = get_pd_entry_from_pd_table(vaddr, pdpe);
  
@@ -224,11 +271,10 @@ index 60a10c8..006abf3 100644
          m  = _map_alloc_page();
          if (m == NULL) {
              ret = ERR_NO_MEMORY;
-             if (pd_new)
-                 goto clean_pd;
+@@ -453,6 +473,22 @@ status_t x86_mmu_add_mapping(map_addr_t pml4, map_addr_t paddr,
              goto clean;
-+        }
-+
+         }
+ 
 +        /* If preview table is 2M page leaf, expand to 4K page leaves */
 +        if (need_expand) {
 +            uint64_t pd_paddr = X86_VIRT_TO_PHYS(pde);
@@ -243,10 +289,12 @@ index 60a10c8..006abf3 100644
 +                    pt_table[index] |= X86_MMU_PG_G;
 +                pd_paddr += 4096;
 +            }
-         }
- 
++        }
++
          update_pd_entry(vaddr, pdpe, X86_VIRT_TO_PHYS(m), get_x86_arch_flags(mmu_flags));
-@@ -481,7 +517,7 @@
+         pde = (uint64_t)m;
+     }
+@@ -481,7 +517,7 @@ clean:
  static void x86_mmu_unmap_entry(vaddr_t vaddr, int level, vaddr_t table_entry)
  {
      uint32_t offset = 0, next_level_offset = 0;
@@ -255,7 +303,7 @@ index 60a10c8..006abf3 100644
  
      LTRACEF("vaddr 0x%lx level %d table_entry 0x%lx\n", vaddr, level, table_entry);
  
-@@ -545,12 +581,10 @@
+@@ -545,12 +581,10 @@ static void x86_mmu_unmap_entry(vaddr_t vaddr, int level, vaddr_t table_entry)
          }
          pmm_free_page(paddr_to_vm_page(X86_VIRT_TO_PHYS(next_table_addr)));
      }
@@ -270,7 +318,7 @@ index 60a10c8..006abf3 100644
          arch_enable_ints();
      }
  }
-@@ -569,6 +603,11 @@
+@@ -569,6 +603,11 @@ status_t x86_mmu_unmap(map_addr_t pml4, vaddr_t vaddr, uint count)
      next_aligned_v_addr = vaddr;
      while (count > 0) {
          x86_mmu_unmap_entry(next_aligned_v_addr, X86_PAGING_LEVELS, pml4);
@@ -282,7 +330,7 @@ index 60a10c8..006abf3 100644
          next_aligned_v_addr += PAGE_SIZE;
          count--;
      }
-@@ -589,8 +628,8 @@
+@@ -589,8 +628,8 @@ int arch_mmu_unmap(arch_aspace_t *aspace, vaddr_t vaddr, uint count)
      if (count == 0)
          return NO_ERROR;
  
@@ -293,7 +341,7 @@ index 60a10c8..006abf3 100644
  
      return (x86_mmu_unmap(X86_PHYS_TO_VIRT(current_cr3_val), vaddr, count));
  }
-@@ -648,17 +687,15 @@
+@@ -648,17 +687,15 @@ status_t arch_mmu_query(arch_aspace_t *aspace, vaddr_t vaddr, paddr_t *paddr, ui
  
      DEBUG_ASSERT(aspace);
  
@@ -315,7 +363,7 @@ index 60a10c8..006abf3 100644
      LTRACEF("paddr 0x%llx\n", last_valid_entry);
  
      /* converting x86 arch specific flags to arch mmu flags */
-@@ -686,8 +723,8 @@
+@@ -686,8 +723,8 @@ int arch_mmu_map(arch_aspace_t *aspace, vaddr_t vaddr, paddr_t paddr, uint count
      if (count == 0)
          return NO_ERROR;
  
@@ -326,7 +374,7 @@ index 60a10c8..006abf3 100644
  
      range.start_vaddr = vaddr;
      range.start_paddr = paddr;
-@@ -714,9 +751,9 @@
+@@ -714,9 +751,9 @@ void x86_mmu_early_init(void)
      x86_set_cr4(cr4);
  
      /* Set NXE bit in MSR_EFER*/
@@ -339,7 +387,7 @@ index 60a10c8..006abf3 100644
  
      /* getting the address width from CPUID instr */
      /* Bits 07-00: Physical Address width info */
-@@ -730,6 +767,8 @@
+@@ -730,6 +767,8 @@ void x86_mmu_early_init(void)
      /* unmap the lower identity mapping */
      pml4[0] = 0;
  
@@ -348,7 +396,7 @@ index 60a10c8..006abf3 100644
      /* tlb flush */
      x86_set_cr3(x86_get_cr3());
  }
-@@ -738,16 +777,29 @@
+@@ -738,16 +777,29 @@ void x86_mmu_init(void)
  {
  }
  
@@ -384,7 +432,7 @@ index 60a10c8..006abf3 100644
      }
  
      return NO_ERROR;
-@@ -755,13 +807,20 @@
+@@ -755,13 +807,20 @@ status_t arch_mmu_init_aspace(arch_aspace_t *aspace, vaddr_t base, size_t size,
  
  status_t arch_mmu_destroy_aspace(arch_aspace_t *aspace)
  {
@@ -409,7 +457,7 @@ index 60a10c8..006abf3 100644
  }
  
 diff --git a/arch/x86/64/ops.S b/arch/x86/64/ops.S
-index 10b55bd..fd016f3 100644
+index 10b55bd5..fd016f31 100644
 --- a/arch/x86/64/ops.S
 +++ b/arch/x86/64/ops.S
 @@ -37,12 +37,12 @@
@@ -429,7 +477,7 @@ index 10b55bd..fd016f3 100644
      jnz 1f                  /* static prediction: branch forward not taken */
      ret
  1:
-@@ -52,12 +52,12 @@
+@@ -52,12 +52,12 @@ FUNCTION(_atomic_and)
  /* int _atomic_or(int *ptr, int val); */
  FUNCTION(_atomic_or)
  
@@ -447,7 +495,7 @@ index 10b55bd..fd016f3 100644
      ret
  1:
 diff --git a/arch/x86/64/start.S b/arch/x86/64/start.S
-index edf4e11..f9a5d33 100644
+index edf4e113..f9a5d332 100644
 --- a/arch/x86/64/start.S
 +++ b/arch/x86/64/start.S
 @@ -39,8 +39,11 @@
@@ -464,7 +512,7 @@ index edf4e11..f9a5d33 100644
  
  #define PHYS_LOAD_ADDRESS (MEMBASE + KERNEL_LOAD_OFFSET)
  #define PHYS_ADDR_DELTA (KERNEL_BASE + KERNEL_LOAD_OFFSET - PHYS_LOAD_ADDRESS)
-@@ -134,6 +137,12 @@
+@@ -134,6 +137,12 @@ paging_setup:
      orl $EFER_LME,%eax
      wrmsr
  
@@ -477,7 +525,7 @@ index edf4e11..f9a5d33 100644
      /* Setting the First PML4E with a PDP table reference*/
      movl $PHYS(pdp), %eax
      orl  $X86_KERNEL_PD_FLAGS, %eax
-@@ -224,6 +233,14 @@
+@@ -224,6 +233,14 @@ highaddr:
      /* reload the gdtr */
      lgdt _gdtr
  
@@ -494,7 +542,7 @@ index edf4e11..f9a5d33 100644
  
 diff --git a/arch/x86/64/usercopy.c b/arch/x86/64/usercopy.c
 new file mode 100644
-index 0000000..33fd918
+index 00000000..33fd9185
 --- /dev/null
 +++ b/arch/x86/64/usercopy.c
 @@ -0,0 +1,111 @@
@@ -610,7 +658,7 @@ index 0000000..33fd918
 +    return act_len;
 +}
 diff --git a/arch/x86/arch.c b/arch/x86/arch.c
-index 721c57e..cc81b93 100644
+index 721c57eb..be997367 100644
 --- a/arch/x86/arch.c
 +++ b/arch/x86/arch.c
 @@ -1,6 +1,6 @@
@@ -621,7 +669,7 @@ index 721c57e..cc81b93 100644
   *
   * Permission is hereby granted, free of charge, to any person obtaining
   * a copy of this software and associated documentation files
-@@ -27,42 +27,108 @@
+@@ -27,42 +27,112 @@
  #include <arch/ops.h>
  #include <arch/x86.h>
  #include <arch/x86/mmu.h>
@@ -650,12 +698,17 @@ index 721c57e..cc81b93 100644
 +extern uint64_t __tss_end;
 +extern void x86_syscall(void);
  
-+static void init_global_state(x86_global_states_t *states, uint cpu)
++static void init_global_state(uint cpu)
 +{
-+    states->cur_thread    = NULL;
-+    states->syscall_stack = 0;
++    x86_global_states_t states;
 +
-+    write_msr(X86_MSR_GS_BASE, (uint64_t)states);
++    ASSERT(cpu < SMP_MAX_CPUS);
++    states = global_states[cpu];
++
++    states.cur_thread    = NULL;
++    states.syscall_stack = 0;
++
++    write_msr(X86_MSR_GS_BASE, (uint64_t)&states);
 +}
 +
 +void *get_tss_base(void)
@@ -694,31 +747,16 @@ index 721c57e..cc81b93 100644
 +}
  void arch_early_init(void)
  {
+-    /* enable caches here for now */
+-    clear_in_cr0(X86_CR0_NW | X86_CR0_CD);
 +    seg_sel_t sel = 0;
 +    uint cpu_id = 1;
-+
+ 
+-    memset(&system_tss, 0, sizeof(system_tss));
 +    __asm__ __volatile__ (
 +            "lock xaddq %%rax, (%%rdx)"
 +            : "=a" (cpu_id)
 +            : "a" (cpu_id), "d"(&cpu_waken_up));
-+
-+    /*
-+     * At this point, BSP has set up current thread in global state,
-+     * init global states of AP(s) only.
-+     */
-+    if (0 != cpu_id)
-+        init_global_state(&global_states[cpu_id], cpu_id);
-+
-+    if (check_fsgsbase_avail())
-+        x86_set_cr4(x86_get_cr4() | X86_CR4_FSGSBASE);
-+    sel = (seg_sel_t)(cpu_id << 4);
-+    sel += TSS_SELECTOR;
-+
-     /* enable caches here for now */
-     clear_in_cr0(X86_CR0_NW | X86_CR0_CD);
- 
--    memset(&system_tss, 0, sizeof(system_tss));
-+    memset(&system_tss[cpu_id], 0, sizeof(tss_t));
  
 -#if ARCH_X86_32
 -    system_tss.esp0 = 0;
@@ -729,7 +767,22 @@ index 721c57e..cc81b93 100644
 -    system_tss.bitmap = offsetof(tss_32_t, tss_bitmap);
 -    system_tss.trace = 1; // trap on hardware task switch
 -#endif
--
++    /*
++     * At this point, BSP has set up current thread in global state,
++     * init global states of AP(s) only.
++     */
++
++    if (0 != cpu_id)
++        init_global_state(cpu_id);
++
++    if (check_fsgsbase_avail())
++        x86_set_cr4(x86_get_cr4() | X86_CR4_FSGSBASE);
++    sel = (seg_sel_t)(cpu_id << 4);
++    sel += TSS_SELECTOR;
++
++    /* enable caches here for now */
++    clear_in_cr0(X86_CR0_NW | X86_CR0_CD);
+ 
 -    set_global_desc(TSS_SELECTOR, &system_tss, sizeof(system_tss), 1, 0, 0, SEG_TYPE_TSS, 0, 0);
 -    x86_ltr(TSS_SELECTOR);
 +    set_global_desc(sel,
@@ -745,17 +798,17 @@ index 721c57e..cc81b93 100644
  
      x86_mmu_early_init();
  }
-@@ -70,6 +136,9 @@
- void arch_init(void)
+@@ -71,6 +141,9 @@ void arch_init(void)
  {
      x86_mmu_init();
-+
+ 
 +    arch_set_tss_segment_percpu();
 +    arch_setup_syscall_percpu();
- 
++
  #ifdef X86_WITH_FPU
      fpu_init();
-@@ -83,37 +152,42 @@
+ #endif
+@@ -83,37 +156,42 @@ void arch_chain_load(void *entry, ulong arg0, ulong arg1, ulong arg2, ulong arg3
  
  void arch_enter_uspace(vaddr_t entry_point, vaddr_t user_stack_top, uint32_t flags, ulong arg0)
  {
@@ -767,12 +820,35 @@ index 721c57e..cc81b93 100644
 +    register uint64_t code_seg = USER_CODE_64_SELECTOR | USER_RPL;
 +    register uint64_t data_seg = USER_DATA_64_SELECTOR | USER_RPL;
 +    register uint64_t usr_flags = USER_EFLAGS;
++
++    __asm__ __volatile__ (
++            "pushq %0   \n\t"
++            "pushq %1   \n\t"
++            "pushq %2   \n\t"
++            "pushq %3   \n\t"
++            "pushq %4   \n\t"
++            "pushq %0   \n\t"
++            "popq %%rax \n\t"
++            "swapgs \n\t"
++            "movw %%ax, %%ds    \n\t"
++            "movw %%ax, %%es    \n\t"
++            "movw %%ax, %%fs    \n\t"
++            "movw %%ax, %%gs    \n\t"
++            "iretq"
++            :
++            :"r"(data_seg),"r"(sp_usr),"r"(usr_flags),"r"(code_seg),"r"(entry));
++    __UNREACHABLE;
++}
  
 -    thread_t *ct = get_current_thread();
--
++void arch_syscall_stack_switch(vaddr_t new_thread_syscall)
++{
++    tss_t *tss_base= get_tss_base();
+ 
 -    vaddr_t kernel_stack_top = (uintptr_t)ct->stack + ct->stack_size;
 -    kernel_stack_top = ROUNDDOWN(kernel_stack_top, 16);
--
++    ASSERT(tss_base);
+ 
 -    /* set up a default spsr to get into 64bit user space:
 -     * zeroed NZCV
 -     * no SS, no IL, no D
@@ -795,32 +871,8 @@ index 721c57e..cc81b93 100644
 -        [entry]"r"(entry_point),
 -        [spsr]"r"(spsr)
 -        : "memory");
-+    __asm__ __volatile__ (
-+            "pushq %0   \n\t"
-+            "pushq %1   \n\t"
-+            "pushq %2   \n\t"
-+            "pushq %3   \n\t"
-+            "pushq %4   \n\t"
-+            "pushq %0   \n\t"
-+            "popq %%rax \n\t"
-+            "swapgs \n\t"
-+            "movw %%ax, %%ds    \n\t"
-+            "movw %%ax, %%es    \n\t"
-+            "movw %%ax, %%fs    \n\t"
-+            "movw %%ax, %%gs    \n\t"
-+            "iretq"
-+            :
-+            :"r"(data_seg),"r"(sp_usr),"r"(usr_flags),"r"(code_seg),"r"(entry));
-     __UNREACHABLE;
+-    __UNREACHABLE;
 -#endif
-+}
-+
-+void arch_syscall_stack_switch(vaddr_t new_thread_syscall)
-+{
-+    tss_t *tss_base= get_tss_base();
-+
-+    ASSERT(tss_base);
-+
 +    if (0 == new_thread_syscall) {
 +        tss_base->rsp0 = x86_get_syscall_stack();
 +    } else {
@@ -830,7 +882,7 @@ index 721c57e..cc81b93 100644
 +    write_msr(SYSENTER_ESP_MSR, tss_base->rsp0);
  }
 diff --git a/arch/x86/cache.c b/arch/x86/cache.c
-index 8f5cf5b..1e24b64 100644
+index 8f5cf5b9..1e24b64a 100644
 --- a/arch/x86/cache.c
 +++ b/arch/x86/cache.c
 @@ -1,5 +1,6 @@
@@ -857,7 +909,7 @@ index 8f5cf5b..1e24b64 100644
 +{
 +}
 diff --git a/arch/x86/descriptor.c b/arch/x86/descriptor.c
-index b9424f4..08d8d0f 100644
+index b9424f4a..c94de2f0 100644
 --- a/arch/x86/descriptor.c
 +++ b/arch/x86/descriptor.c
 @@ -1,5 +1,6 @@
@@ -867,7 +919,7 @@ index b9424f4..08d8d0f 100644
   *
   * Permission is hereby granted, free of charge, to any person obtaining
   * a copy of this software and associated documentation files
-@@ -24,45 +25,64 @@
+@@ -24,45 +25,65 @@
  #include <compiler.h>
  #include <arch/x86/descriptor.h>
  
@@ -948,6 +1000,7 @@ index b9424f4..08d8d0f 100644
 -    _gdt[index].g = gran != 0;      // granularity
 -    _gdt[index].s = sys != 0;       // system / non-system
 -    _gdt[index].d_b = bits != 0;    // 16 / 32 bit
++    _gdt[index].seg_desc_legacy.avl  = 0;
 +    _gdt[index].seg_desc_legacy.type = type & 0x0f;    // segment type
 +    _gdt[index].seg_desc_legacy.p    = present != 0;   // present
 +    _gdt[index].seg_desc_legacy.dpl  = ring & 0x03;    // descriptor privilege level
@@ -962,10 +1015,18 @@ index b9424f4..08d8d0f 100644
 +    }
  }
 diff --git a/arch/x86/faults.c b/arch/x86/faults.c
-index b617eb5..7b82bc5 100644
+index b617eb56..2b0429fb 100644
 --- a/arch/x86/faults.c
 +++ b/arch/x86/faults.c
-@@ -77,7 +77,7 @@
+@@ -26,6 +26,7 @@
+ #include <arch/x86.h>
+ #include <arch/fpu.h>
+ #include <kernel/thread.h>
++#include <platform.h>
+ 
+ /* exceptions */
+ #define INT_DIVIDE_0        0x00
+@@ -77,9 +78,10 @@ static void dump_fault_frame(x86_iframe_t *frame)
  
  static void exception_die(x86_iframe_t *frame, const char *msg)
  {
@@ -973,22 +1034,25 @@ index b617eb5..7b82bc5 100644
 +    dprintf(CRITICAL, "%s\n", msg);
      dump_fault_frame(frame);
  
++    platform_halt(HALT_ACTION_HALT, HALT_REASON_SW_PANIC);
      for (;;) {
-@@ -194,12 +194,6 @@
- 
-         case INT_PAGE_FAULT:
+         x86_cli();
+         x86_hlt();
+@@ -196,12 +198,6 @@ void x86_exception_handler(x86_iframe_t *frame)
              x86_pfe_handler(frame);
--            break;
--
+             break;
+ 
 -        case INT_DEV_NA_EX:
 -#if X86_WITH_FPU
 -            fpu_dev_na_handler();
 -#endif
-             break;
- 
+-            break;
+-
          case INT_MF: { /* x87 floating point math fault */
+             uint16_t fsw;
+             __asm__ __volatile__("fnstsw %0" : "=m" (fsw));
 diff --git a/arch/x86/fpu.c b/arch/x86/fpu.c
-index 414fbfa..9ca6438 100644
+index 414fbfa9..9ca6438c 100644
 --- a/arch/x86/fpu.c
 +++ b/arch/x86/fpu.c
 @@ -39,6 +39,7 @@
@@ -1019,7 +1083,7 @@ index 414fbfa..9ca6438 100644
  
  static void get_cpu_cap(uint32_t *ecx, uint32_t *edx)
  {
-@@ -72,15 +78,13 @@
+@@ -72,6 +78,7 @@ void fpu_init(void)
      uint32_t ecx = 0, edx = 0;
      uint16_t fcw;
      uint32_t mxcsr;
@@ -1027,16 +1091,17 @@ index 414fbfa..9ca6438 100644
  
  #ifdef ARCH_X86_64
      uint64_t x;
- #else
+@@ -79,9 +86,6 @@ void fpu_init(void)
      uint32_t x;
  #endif
--
+ 
 -    fp_supported = 0;
 -    fp_owner = NULL;
- 
+-
      get_cpu_cap(&ecx, &edx);
  
-@@ -113,7 +117,9 @@
+     if (!FPU_CAP(ecx, edx) || !SSE_CAP(ecx, edx) || !FXSAVE_CAP(ecx, edx))
+@@ -113,7 +117,9 @@ void fpu_init(void)
      x = x86_get_cr4();
      x |= X86_CR4_OSXMMEXPT;
      x |= X86_CR4_OSFXSR;
@@ -1047,7 +1112,7 @@ index 414fbfa..9ca6438 100644
      x86_set_cr4(x);
  
      __asm__ __volatile__("stmxcsr %0" : "=m" (mxcsr));
-@@ -127,16 +133,17 @@
+@@ -127,16 +133,17 @@ void fpu_init(void)
      __asm__ __volatile__("ldmxcsr %0" : : "m" (mxcsr));
  
      /* save fpu initial states, and used when new thread creates */
@@ -1068,7 +1133,7 @@ index 414fbfa..9ca6438 100644
  }
  
  void fpu_context_switch(thread_t *old_thread, thread_t *new_thread)
-@@ -144,34 +151,14 @@
+@@ -144,34 +151,14 @@ void fpu_context_switch(thread_t *old_thread, thread_t *new_thread)
      if (fp_supported == 0)
          return;
  
@@ -1108,7 +1173,7 @@ index 414fbfa..9ca6438 100644
  
  /* End of file */
 diff --git a/arch/x86/gdt.S b/arch/x86/gdt.S
-index c70dfe4..c37e20d 100644
+index c70dfe4b..c37e20de 100644
 --- a/arch/x86/gdt.S
 +++ b/arch/x86/gdt.S
 @@ -1,6 +1,6 @@
@@ -1119,7 +1184,7 @@ index c70dfe4..c37e20d 100644
   * Copyright (c) 2016 Travis Geiselbrecht
   *
   * Permission is hereby granted, free of charge, to any person obtaining
-@@ -51,79 +51,96 @@
+@@ -51,79 +51,96 @@ DATA(_gdt)
      .int 0
      .int 0
  
@@ -1235,7 +1300,7 @@ index c70dfe4..c37e20d 100644
  
  /* TSS descriptor */
  .set tsssel, . - _gdt
-@@ -131,9 +148,9 @@
+@@ -131,9 +148,9 @@ _tss_gde:
      .short 0                /* limit 15:00 */
      .short 0                /* base 15:00 */
      .byte  0                /* base 23:16 */
@@ -1249,7 +1314,7 @@ index c70dfe4..c37e20d 100644
  
  DATA(_gdt_end)
 diff --git a/arch/x86/include/arch/arch_ops.h b/arch/x86/include/arch/arch_ops.h
-index 5ad97b1..b786075 100644
+index 5ad97b13..b7860752 100644
 --- a/arch/x86/include/arch/arch_ops.h
 +++ b/arch/x86/include/arch/arch_ops.h
 @@ -1,6 +1,7 @@
@@ -1268,13 +1333,10 @@ index 5ad97b1..b786075 100644
  
  /* override of some routines */
  static inline void arch_enable_ints(void)
-@@ -39,6 +41,16 @@
- static inline void arch_disable_ints(void)
- {
-     __asm__ volatile("cli");
-+    CF;
-+}
-+
+@@ -42,6 +44,16 @@ static inline void arch_disable_ints(void)
+     CF;
+ }
+ 
 +static inline void arch_enable_fiqs(void)
 +{
 +    CF;
@@ -1282,10 +1344,13 @@ index 5ad97b1..b786075 100644
 +
 +static inline void arch_disable_fiqs(void)
 +{
-     CF;
- }
- 
-@@ -89,9 +101,30 @@
++    CF;
++}
++
+ static inline bool arch_ints_disabled(void)
+ {
+     x86_flags_t state;
+@@ -89,9 +101,30 @@ static inline int atomic_swap(volatile int *ptr, int val)
  }
  
  
@@ -1316,7 +1381,7 @@ index 5ad97b1..b786075 100644
  
  static inline uint32_t arch_cycle_count(void)
  {
-@@ -101,17 +134,14 @@
+@@ -101,17 +134,14 @@ static inline uint32_t arch_cycle_count(void)
      return timestamp;
  }
  
@@ -1336,7 +1401,7 @@ index 5ad97b1..b786075 100644
  }
  
  static inline uint arch_curr_cpu_num(void)
-@@ -119,4 +149,19 @@
+@@ -119,4 +149,19 @@ static inline uint arch_curr_cpu_num(void)
      return 0;
  }
  
@@ -1357,7 +1422,7 @@ index 5ad97b1..b786075 100644
 +
  #endif // !ASSEMBLY
 diff --git a/arch/x86/include/arch/arch_thread.h b/arch/x86/include/arch/arch_thread.h
-index bd970a4..0882db9 100644
+index bd970a47..0882db9e 100644
 --- a/arch/x86/include/arch/arch_thread.h
 +++ b/arch/x86/include/arch/arch_thread.h
 @@ -1,6 +1,6 @@
@@ -1393,7 +1458,7 @@ index bd970a4..0882db9 100644
      vaddr_t sp;
  #if X86_WITH_FPU
 diff --git a/arch/x86/include/arch/aspace.h b/arch/x86/include/arch/aspace.h
-index 3c82778..a494a66 100644
+index 3c82778c..a494a661 100644
 --- a/arch/x86/include/arch/aspace.h
 +++ b/arch/x86/include/arch/aspace.h
 @@ -1,5 +1,6 @@
@@ -1419,41 +1484,44 @@ index 3c82778..a494a66 100644
  };
  
  __END_CDECLS
-diff --git a/arch/x86/include/arch/local_apic.h b/arch/x86/include/arch/local_apic.h
-new file mode 100644
-index 0000000..9c38bea
---- /dev/null
+diff --git a/lib/libc/string/arch/x86/memset.S b/arch/x86/include/arch/local_apic.h
+similarity index 74%
+rename from lib/libc/string/arch/x86/memset.S
+rename to arch/x86/include/arch/local_apic.h
+index 43367f6d..9c38bea9 100644
+--- a/lib/libc/string/arch/x86/memset.S
 +++ b/arch/x86/include/arch/local_apic.h
-@@ -0,0 +1,36 @@
-+/*
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2009 Corey Tabaka
 + * Copyright (c) 2018 Intel Corporation
-+ *
-+ * Permission is hereby granted, free of charge, to any person obtaining
-+ * a copy of this software and associated documentation files
-+ * (the "Software"), to deal in the Software without restriction,
-+ * including without limitation the rights to use, copy, modify, merge,
-+ * publish, distribute, sublicense, and/or sell copies of the Software,
-+ * and to permit persons to whom the Software is furnished to do so,
-+ * subject to the following conditions:
-+ *
-+ * The above copyright notice and this permission notice shall be
-+ * included in all copies or substantial portions of the Software.
-+ *
-+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-+ */
+  *
+  * Permission is hereby granted, free of charge, to any person obtaining
+  * a copy of this software and associated documentation files
+@@ -20,18 +20,17 @@
+  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  */
+-#include <asm.h>
 +#pragma once
-+
+ 
+-/* TODO: */
+-
+-.text
+-.align 2
+-
+-/* void bzero(void *s, size_t n); */
+-FUNCTION(bzero)
+-    ret
+-
+-/* void *memset(void *s, int c, size_t n); */
+-FUNCTION(memset)
+-    ret
 +#include <compiler.h>
 +#include <sys/types.h>
 +#include <stdlib.h>
 +#include <stdbool.h>
-+
+ 
 +void lapic_id_init(void);
 +void local_apic_init(void);
 +void lapic_eoi(void);
@@ -1462,7 +1530,7 @@ index 0000000..9c38bea
 +void local_apic_reinit(void);
 +bool local_apic_vector_in_service(uint32_t vector);
 diff --git a/arch/x86/include/arch/spinlock.h b/arch/x86/include/arch/spinlock.h
-index b641113..203c80a 100644
+index b6411132..203c80a7 100644
 --- a/arch/x86/include/arch/spinlock.h
 +++ b/arch/x86/include/arch/spinlock.h
 @@ -1,5 +1,6 @@
@@ -1484,7 +1552,7 @@ index b641113..203c80a 100644
  
  typedef x86_flags_t spin_lock_saved_state_t;
 diff --git a/arch/x86/include/arch/x86.h b/arch/x86/include/arch/x86.h
-index 2e7087e..f6c73c0 100644
+index 2e7087e9..f6c73c0f 100644
 --- a/arch/x86/include/arch/x86.h
 +++ b/arch/x86/include/arch/x86.h
 @@ -1,6 +1,6 @@
@@ -1495,7 +1563,7 @@ index 2e7087e..f6c73c0 100644
   * Copyright (c) 2016 Travis Geiselbrecht
   *
   * Permission is hereby granted, free of charge, to any person obtaining
-@@ -136,24 +136,27 @@
+@@ -136,24 +136,27 @@ typedef tss_32_t tss_t;
  typedef tss_64_t tss_t;
  #endif
  
@@ -1541,7 +1609,7 @@ index 2e7087e..f6c73c0 100644
  
  #if ARCH_X86_32
  static inline void set_in_cr0(uint32_t mask)
-@@ -497,7 +500,7 @@
+@@ -497,7 +500,7 @@ static inline uint32_t check_smep_avail(void)
          "cpuid \n\t"
          :"=b" (reg_b)
          :"a" (reg_a),"c" (reg_c));
@@ -1550,7 +1618,7 @@ index 2e7087e..f6c73c0 100644
  }
  
  static inline uint32_t check_smap_avail(void)
-@@ -509,7 +512,7 @@
+@@ -509,7 +512,7 @@ static inline uint32_t check_smap_avail(void)
          "cpuid \n\t"
          :"=b" (reg_b)
          :"a" (reg_a),"c" (reg_c));
@@ -1559,7 +1627,7 @@ index 2e7087e..f6c73c0 100644
  }
  #endif // ARCH_X86_32
  
-@@ -828,7 +831,7 @@
+@@ -828,7 +831,7 @@ static inline uint64_t check_smep_avail(void)
          "cpuid \n\t"
          :"=b" (reg_b)
          :"a" (reg_a),"c" (reg_c));
@@ -1568,7 +1636,7 @@ index 2e7087e..f6c73c0 100644
  }
  
  static inline uint64_t check_smap_avail(void)
-@@ -840,9 +843,42 @@
+@@ -840,9 +843,42 @@ static inline uint64_t check_smap_avail(void)
          "cpuid \n\t"
          :"=b" (reg_b)
          :"a" (reg_a),"c" (reg_c));
@@ -1613,7 +1681,7 @@ index 2e7087e..f6c73c0 100644
  
  __END_CDECLS
 diff --git a/arch/x86/include/arch/x86/descriptor.h b/arch/x86/include/arch/x86/descriptor.h
-index 832c2c4..91e7c44 100644
+index 832c2c41..91e7c446 100644
 --- a/arch/x86/include/arch/x86/descriptor.h
 +++ b/arch/x86/include/arch/x86/descriptor.h
 @@ -1,6 +1,6 @@
@@ -1680,7 +1748,7 @@ index 832c2c4..91e7c44 100644
  
  #endif
 diff --git a/arch/x86/include/arch/x86/mmu.h b/arch/x86/include/arch/x86/mmu.h
-index b71cdc6..9722a59 100644
+index b71cdc62..9722a59a 100644
 --- a/arch/x86/include/arch/x86/mmu.h
 +++ b/arch/x86/include/arch/x86/mmu.h
 @@ -1,6 +1,6 @@
@@ -1711,7 +1779,7 @@ index b71cdc6..9722a59 100644
  #define X86_2MB_PAGE_FRAME  (0x000fffffffe00000ul)
 diff --git a/arch/x86/include/arch/x86/mp.h b/arch/x86/include/arch/x86/mp.h
 new file mode 100644
-index 0000000..b6b6455
+index 00000000..b6b6455e
 --- /dev/null
 +++ b/arch/x86/include/arch/x86/mp.h
 @@ -0,0 +1,55 @@
@@ -1772,7 +1840,7 @@ index 0000000..b6b6455
 +}
 diff --git a/arch/x86/local_apic.c b/arch/x86/local_apic.c
 new file mode 100644
-index 0000000..434cc0a
+index 00000000..434cc0a4
 --- /dev/null
 +++ b/arch/x86/local_apic.c
 @@ -0,0 +1,190 @@
@@ -1967,10 +2035,10 @@ index 0000000..434cc0a
 +    return !!BIT(val, bit);
 +}
 diff --git a/arch/x86/rules.mk b/arch/x86/rules.mk
-index e26dfb9..b14afff 100644
+index e26dfb9a..001b19ee 100644
 --- a/arch/x86/rules.mk
 +++ b/arch/x86/rules.mk
-@@ -24,8 +24,8 @@
+@@ -24,8 +24,8 @@ KERNEL_BASE ?= 0xffffffff80000000
  KERNEL_LOAD_OFFSET ?= 0x00200000
  KERNEL_ASPACE_BASE ?= 0xffffff8000000000UL # -512GB
  KERNEL_ASPACE_SIZE ?= 0x0000008000000000UL
@@ -1981,7 +2049,7 @@ index e26dfb9..b14afff 100644
  SUBARCH_DIR := $(LOCAL_DIR)/64
  endif
  
-@@ -38,6 +38,8 @@
+@@ -38,6 +38,8 @@ GLOBAL_DEFINES += \
  	KERNEL_LOAD_OFFSET=$(KERNEL_LOAD_OFFSET) \
  	KERNEL_ASPACE_BASE=$(KERNEL_ASPACE_BASE) \
  	KERNEL_ASPACE_SIZE=$(KERNEL_ASPACE_SIZE) \
@@ -1990,7 +2058,7 @@ index e26dfb9..b14afff 100644
  	SMP_MAX_CPUS=1 \
  	X86_WITH_FPU=1
  
-@@ -47,14 +49,19 @@
+@@ -47,14 +49,19 @@ MODULE_SRCS += \
  	$(SUBARCH_DIR)/exceptions.S \
  	$(SUBARCH_DIR)/mmu.c \
  	$(SUBARCH_DIR)/ops.S \
@@ -2012,7 +2080,7 @@ index e26dfb9..b14afff 100644
  
  include $(LOCAL_DIR)/toolchain.mk
  
-@@ -74,6 +81,9 @@
+@@ -74,6 +81,9 @@ $(warning ARCH_x86_TOOLCHAIN_PREFIX = $(ARCH_x86_TOOLCHAIN_PREFIX))
  $(warning ARCH_x86_64_TOOLCHAIN_PREFIX = $(ARCH_x86_64_TOOLCHAIN_PREFIX))
  $(warning TOOLCHAIN_PREFIX = $(TOOLCHAIN_PREFIX))
  
@@ -2022,7 +2090,7 @@ index e26dfb9..b14afff 100644
  
  cc-option = $(shell if test -z "`$(1) $(2) -S -o /dev/null -xc /dev/null 2>&1`"; \
  	then echo "$(2)"; else echo "$(3)"; fi ;)
-@@ -84,6 +94,7 @@
+@@ -84,12 +94,20 @@ GLOBAL_CFLAGS += $(call cc-option,$(CC),-fno-stack-protector,)
  GLOBAL_COMPILEFLAGS += -fasynchronous-unwind-tables
  GLOBAL_COMPILEFLAGS += -gdwarf-2
  GLOBAL_COMPILEFLAGS += -fno-pic
@@ -2030,8 +2098,21 @@ index e26dfb9..b14afff 100644
  GLOBAL_LDFLAGS += -z max-page-size=4096
  
  ifeq ($(SUBARCH),x86-64)
+ GLOBAL_COMPILEFLAGS += -fno-stack-protector
+ GLOBAL_COMPILEFLAGS += -mcmodel=kernel
+ GLOBAL_COMPILEFLAGS += -mno-red-zone
++
++#Disable GCC to use builtin string function
++GLOBAL_COMPILEFLAGS += -fno-builtin
++
++#GP does not support SSE2 instructions
++GLOBAL_COMPILEFLAGS += -mno-sse2
++
+ endif # SUBARCH x86-64
+ 
+ 
 diff --git a/arch/x86/thread.c b/arch/x86/thread.c
-index e75f199..85eb57f 100644
+index e75f1997..85eb57fb 100644
 --- a/arch/x86/thread.c
 +++ b/arch/x86/thread.c
 @@ -1,7 +1,7 @@
@@ -2065,7 +2146,7 @@ index e75f199..85eb57f 100644
  
      thread_exit(ret);
  }
-@@ -123,38 +121,19 @@
+@@ -123,38 +121,19 @@ void arch_context_switch(thread_t *oldthread, thread_t *newthread)
          :
          : "d" (&oldthread->arch.sp), "a" (newthread->arch.sp)
      );
@@ -2110,10 +2191,10 @@ index e75f199..85eb57f 100644
      x86_64_context_switch(&oldthread->arch.sp, newthread->arch.sp);
  }
 diff --git a/arch/x86/toolchain.mk b/arch/x86/toolchain.mk
-index dba751e..aa041fd 100644
+index dba751e8..aa041fdc 100644
 --- a/arch/x86/toolchain.mk
 +++ b/arch/x86/toolchain.mk
-@@ -22,13 +22,30 @@
+@@ -22,13 +22,30 @@ ARCH_x86_64_TOOLCHAIN_INCLUDED := 1
  
  ifndef ARCH_x86_64_TOOLCHAIN_PREFIX
  ARCH_x86_64_TOOLCHAIN_PREFIX := x86_64-elf-
@@ -2146,10 +2227,19 @@ index dba751e..aa041fd 100644
  endif
  
 diff --git a/engine.mk b/engine.mk
-index c0a45fa..527c149 100644
+index c0a45fa3..f464c506 100644
 --- a/engine.mk
 +++ b/engine.mk
-@@ -133,6 +133,9 @@
+@@ -62,7 +62,7 @@ GLOBAL_USER_INCLUDES := $(addsuffix /include/user,$(LKINC))
+ GLOBAL_INCLUDES := $(BUILDDIR) $(GLOBAL_UAPI_INCLUDES) $(GLOBAL_SHARED_INCLUDES) $(GLOBAL_KERNEL_INCLUDES)
+ GLOBAL_OPTFLAGS ?= $(ARCH_OPTFLAGS)
+ GLOBAL_COMPILEFLAGS := -g -finline -include $(CONFIGHEADER)
+-GLOBAL_COMPILEFLAGS += -Werror -Wall -Wsign-compare -Wno-multichar -Wno-unused-function -Wno-unused-label -Wno-tautological-compare
++GLOBAL_COMPILEFLAGS += -Werror -Wall -Wno-nonnull-compare -Wsign-compare -Wno-multichar -Wno-unused-function -Wno-unused-label -Wno-tautological-compare
+ GLOBAL_COMPILEFLAGS += -fno-short-enums -fno-common
+ GLOBAL_CFLAGS := --std=c11 -Wstrict-prototypes -Wwrite-strings
+ GLOBAL_CPPFLAGS := --std=c++11 -fno-exceptions -fno-rtti -fno-threadsafe-statics
+@@ -133,6 +133,9 @@ BUILDID ?=
  # comment out or override if you want to see the full output of each command
  NOECHO ?= @
  
@@ -2159,7 +2249,7 @@ index c0a45fa..527c149 100644
  # default to building with clang
  CLANGBUILD ?= true
  override CLANGBUILD := $(call TOBOOL,$(CLANGBUILD))
-@@ -141,8 +144,6 @@
+@@ -141,8 +144,6 @@ ifeq ($(call TOBOOL,$(CLANGBUILD)), true)
  GLOBAL_COMPILEFLAGS += -Wimplicit-fallthrough
  endif
  
@@ -2168,7 +2258,7 @@ index c0a45fa..527c149 100644
  ifndef TARGET
  $(error couldn't find project or project doesn't define target)
  endif
-@@ -184,6 +185,10 @@
+@@ -184,6 +185,10 @@ GLOBAL_DEFINES += \
  	LK_DEBUGLEVEL=$(DEBUG)
  endif
  
@@ -2179,11 +2269,20 @@ index c0a45fa..527c149 100644
  # allow additional defines from outside the build system
  ifneq ($(EXTERNAL_DEFINES),)
  GLOBAL_DEFINES += $(EXTERNAL_DEFINES)
+@@ -255,7 +260,7 @@ $(error OPTFLAGS is not empty, please use GLOBAL_OPTFLAGS or MODULE_OPTFLAGS)
+ endif
+ ifneq ($(CFLAGS),)
+ $(warning CFLAGS=$(CFLAGS))
+-$(error CFLAGS is not empty, please use GLOBAL_CFLAGS or MODULE_CFLAGS)
++$(warning CFLAGS is not empty, please use GLOBAL_CFLAGS or MODULE_CFLAGS)
+ endif
+ ifneq ($(CPPFLAGS),)
+ $(warning CPPFLAGS=$(CPPFLAGS))
 diff --git a/include/arch/ops.h b/include/arch/ops.h
-index f097751..906757e 100644
+index f0977519..906757e2 100644
 --- a/include/arch/ops.h
 +++ b/include/arch/ops.h
-@@ -40,8 +40,14 @@
+@@ -40,8 +40,14 @@ static bool arch_in_int_handler(void);
  
  static int atomic_swap(volatile int *ptr, int val);
  static int atomic_add(volatile int *ptr, int val);
@@ -2199,7 +2298,7 @@ index f097751..906757e 100644
  static uint32_t arch_cycle_count(void);
  
 diff --git a/include/arch/usercopy.h b/include/arch/usercopy.h
-index 028d399..cdc4662 100644
+index 028d3996..cdc46623 100644
 --- a/include/arch/usercopy.h
 +++ b/include/arch/usercopy.h
 @@ -26,8 +26,7 @@
@@ -2213,7 +2312,7 @@ index 028d399..cdc4662 100644
  status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len);
  status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len);
 diff --git a/lib/libc/include/string.h b/lib/libc/include/string.h
-index c6aa757..32b7656 100644
+index c6aa757a..32b7656b 100644
 --- a/lib/libc/include/string.h
 +++ b/lib/libc/include/string.h
 @@ -25,6 +25,7 @@
@@ -2224,7 +2323,7 @@ index c6aa757..32b7656 100644
  
  __BEGIN_CDECLS
  
-@@ -33,6 +34,7 @@
+@@ -33,6 +34,7 @@ int   memcmp (void const *, const void *, size_t) __PURE;
  void *memcpy (void *, void const *, size_t);
  void *memmove(void *, void const *, size_t);
  void *memset (void *, int, size_t);
@@ -2232,349 +2331,102 @@ index c6aa757..32b7656 100644
  
  char       *strcat(char *, char const *);
  char       *strchr(char const *, int) __PURE;
-diff --git a/lib/libc/string/arch/x86-64/memcpy.S b/lib/libc/string/arch/x86-64/memcpy.S
-deleted file mode 100644
-index 84aec44..0000000
---- a/lib/libc/string/arch/x86-64/memcpy.S
-+++ /dev/null
-@@ -1,38 +0,0 @@
--/*
-- * Copyright (c) 2009 Corey Tabaka
-- *
-- * Permission is hereby granted, free of charge, to any person obtaining
-- * a copy of this software and associated documentation files
-- * (the "Software"), to deal in the Software without restriction,
-- * including without limitation the rights to use, copy, modify, merge,
-- * publish, distribute, sublicense, and/or sell copies of the Software,
-- * and to permit persons to whom the Software is furnished to do so,
-- * subject to the following conditions:
-- *
-- * The above copyright notice and this permission notice shall be
-- * included in all copies or substantial portions of the Software.
-- *
-- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-- * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-- */
--#include <asm.h>
--
--/* TODO: */
--
--.text
--.align 2
--
--/* void bcopy(const void *src, void *dest, size_t n); */
--FUNCTION(bcopy)
--    ret
--
--/* void *memcpy(void *dest, const void *src, size_t n); */
--FUNCTION(memmove)
--FUNCTION(memcpy)
--    ret
--
-diff --git a/lib/libc/string/arch/x86-64/memset.S b/lib/libc/string/arch/x86-64/memset.S
-deleted file mode 100644
-index 43367f6..0000000
---- a/lib/libc/string/arch/x86-64/memset.S
-+++ /dev/null
-@@ -1,37 +0,0 @@
--/*
-- * Copyright (c) 2009 Corey Tabaka
-- *
-- * Permission is hereby granted, free of charge, to any person obtaining
-- * a copy of this software and associated documentation files
-- * (the "Software"), to deal in the Software without restriction,
-- * including without limitation the rights to use, copy, modify, merge,
-- * publish, distribute, sublicense, and/or sell copies of the Software,
-- * and to permit persons to whom the Software is furnished to do so,
-- * subject to the following conditions:
-- *
-- * The above copyright notice and this permission notice shall be
-- * included in all copies or substantial portions of the Software.
-- *
-- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-- * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-- */
--#include <asm.h>
--
--/* TODO: */
--
--.text
--.align 2
--
--/* void bzero(void *s, size_t n); */
--FUNCTION(bzero)
--    ret
--
--/* void *memset(void *s, int c, size_t n); */
--FUNCTION(memset)
--    ret
--
-diff --git a/lib/libc/string/arch/x86-64/rules.mk b/lib/libc/string/arch/x86-64/rules.mk
-deleted file mode 100644
-index 3dc080b..0000000
---- a/lib/libc/string/arch/x86-64/rules.mk
-+++ /dev/null
-@@ -1,11 +0,0 @@
--LOCAL_DIR := $(GET_LOCAL_DIR)
--
--ASM_STRING_OPS := #bcopy bzero memcpy memmove memset
--
--MODULE_SRCS += \
--	#$(LOCAL_DIR)/memcpy.S \
--	#$(LOCAL_DIR)/memset.S
--
--# filter out the C implementation
--C_STRING_OPS := $(filter-out $(ASM_STRING_OPS),$(C_STRING_OPS))
--
-diff --git a/lib/libc/string/arch/x86/64/memcpy.S b/lib/libc/string/arch/x86/64/memcpy.S
-new file mode 100644
-index 0000000..84aec44
---- /dev/null
-+++ b/lib/libc/string/arch/x86/64/memcpy.S
-@@ -0,0 +1,38 @@
-+/*
-+ * Copyright (c) 2009 Corey Tabaka
-+ *
-+ * Permission is hereby granted, free of charge, to any person obtaining
-+ * a copy of this software and associated documentation files
-+ * (the "Software"), to deal in the Software without restriction,
-+ * including without limitation the rights to use, copy, modify, merge,
-+ * publish, distribute, sublicense, and/or sell copies of the Software,
-+ * and to permit persons to whom the Software is furnished to do so,
-+ * subject to the following conditions:
-+ *
-+ * The above copyright notice and this permission notice shall be
-+ * included in all copies or substantial portions of the Software.
-+ *
-+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-+ */
-+#include <asm.h>
+diff --git a/lib/libc/rules.mk b/lib/libc/rules.mk
+index 0b4dffcb..30672085 100644
+--- a/lib/libc/rules.mk
++++ b/lib/libc/rules.mk
+@@ -28,6 +28,13 @@ MODULE_SRCS += \
+ 	$(LOCAL_DIR)/pure_virtual.cpp
+ endif
+ 
++#function double_to_string needs sse2 instruction.
++#Invoke double_to_string might lead to UD (invalid opcode)
++#excptions on GP with Clearlinux
++ifeq ($(ARCH), x86)
++	MODULE_COMPILEFLAGS += -msse2
++endif
 +
-+/* TODO: */
-+
-+.text
-+.align 2
-+
-+/* void bcopy(const void *src, void *dest, size_t n); */
-+FUNCTION(bcopy)
-+    ret
-+
-+/* void *memcpy(void *dest, const void *src, size_t n); */
-+FUNCTION(memmove)
-+FUNCTION(memcpy)
-+    ret
-+
-diff --git a/lib/libc/string/arch/x86/64/memcpy_s.c b/lib/libc/string/arch/x86/64/memcpy_s.c
-new file mode 100644
-index 0000000..06255fd
---- /dev/null
+ include $(LOCAL_DIR)/string/rules.mk
+ 
+ include make/module.mk
+diff --git a/lib/libc/string/arch/x86-64/memcpy.S b/lib/libc/string/arch/x86/64/memcpy.S
+similarity index 100%
+rename from lib/libc/string/arch/x86-64/memcpy.S
+rename to lib/libc/string/arch/x86/64/memcpy.S
+diff --git a/lib/libc/string/arch/x86/memcpy.S b/lib/libc/string/arch/x86/64/memcpy_s.c
+similarity index 72%
+rename from lib/libc/string/arch/x86/memcpy.S
+rename to lib/libc/string/arch/x86/64/memcpy_s.c
+index 84aec44a..06255fdb 100644
+--- a/lib/libc/string/arch/x86/memcpy.S
 +++ b/lib/libc/string/arch/x86/64/memcpy_s.c
-@@ -0,0 +1,41 @@
-+/*
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2009 Corey Tabaka
 + * Copyright (c) 2018 Intel Corporation
-+ *
-+ * Permission is hereby granted, free of charge, to any person obtaining
-+ * a copy of this software and associated documentation files
-+ * (the "Software"), to deal in the Software without restriction,
-+ * including without limitation the rights to use, copy, modify, merge,
-+ * publish, distribute, sublicense, and/or sell copies of the Software,
-+ * and to permit persons to whom the Software is furnished to do so,
-+ * subject to the following conditions:
-+ *
-+ * The above copyright notice and this permission notice shall be
-+ * included in all copies or substantial portions of the Software.
-+ *
-+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-+ */
+  *
+  * Permission is hereby granted, free of charge, to any person obtaining
+  * a copy of this software and associated documentation files
+@@ -20,19 +20,22 @@
+  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  */
+-#include <asm.h>
 +#include <string.h>
 +#include <sys/types.h>
 +#include <uapi/err.h>
-+
+ 
+-/* TODO: */
 +status_t memcpy_s(void *dest, size_t dest_size, const void *src, size_t count)
 +{
 +    if ((NULL == dest) || (NULL == src))
 +        return ERR_NOT_VALID;
-+
-+    if (0 == count)
-+        return NO_ERROR;
-+
-+    if (dest_size < count)
-+        return ERR_OUT_OF_RANGE;
-+
-+    memcpy(dest, src, count);
-+
-+    return NO_ERROR;
-+}
-diff --git a/lib/libc/string/arch/x86/64/memset.S b/lib/libc/string/arch/x86/64/memset.S
-new file mode 100644
-index 0000000..43367f6
---- /dev/null
-+++ b/lib/libc/string/arch/x86/64/memset.S
-@@ -0,0 +1,37 @@
-+/*
-+ * Copyright (c) 2009 Corey Tabaka
-+ *
-+ * Permission is hereby granted, free of charge, to any person obtaining
-+ * a copy of this software and associated documentation files
-+ * (the "Software"), to deal in the Software without restriction,
-+ * including without limitation the rights to use, copy, modify, merge,
-+ * publish, distribute, sublicense, and/or sell copies of the Software,
-+ * and to permit persons to whom the Software is furnished to do so,
-+ * subject to the following conditions:
-+ *
-+ * The above copyright notice and this permission notice shall be
-+ * included in all copies or substantial portions of the Software.
-+ *
-+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-+ */
-+#include <asm.h>
-+
-+/* TODO: */
-+
-+.text
-+.align 2
-+
-+/* void bzero(void *s, size_t n); */
-+FUNCTION(bzero)
-+    ret
-+
-+/* void *memset(void *s, int c, size_t n); */
-+FUNCTION(memset)
-+    ret
-+
-diff --git a/lib/libc/string/arch/x86/64/rules.mk b/lib/libc/string/arch/x86/64/rules.mk
-new file mode 100644
-index 0000000..9f76699
---- /dev/null
-+++ b/lib/libc/string/arch/x86/64/rules.mk
-@@ -0,0 +1,10 @@
-+LOCAL_DIR := $(GET_LOCAL_DIR)
-+
-+ASM_STRING_OPS :=
-+
-+MODULE_SRCS += \
-+	$(LOCAL_DIR)/memcpy_s.c
-+
-+# filter out the C implementation
-+C_STRING_OPS := $(filter-out $(ASM_STRING_OPS),$(C_STRING_OPS))
-+
-diff --git a/lib/libc/string/arch/x86/memcpy.S b/lib/libc/string/arch/x86/memcpy.S
-deleted file mode 100644
-index 84aec44..0000000
---- a/lib/libc/string/arch/x86/memcpy.S
-+++ /dev/null
-@@ -1,38 +0,0 @@
--/*
-- * Copyright (c) 2009 Corey Tabaka
-- *
-- * Permission is hereby granted, free of charge, to any person obtaining
-- * a copy of this software and associated documentation files
-- * (the "Software"), to deal in the Software without restriction,
-- * including without limitation the rights to use, copy, modify, merge,
-- * publish, distribute, sublicense, and/or sell copies of the Software,
-- * and to permit persons to whom the Software is furnished to do so,
-- * subject to the following conditions:
-- *
-- * The above copyright notice and this permission notice shall be
-- * included in all copies or substantial portions of the Software.
-- *
-- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-- * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-- */
--#include <asm.h>
--
--/* TODO: */
--
+ 
 -.text
 -.align 2
--
++    if (0 == count)
++        return NO_ERROR;
+ 
 -/* void bcopy(const void *src, void *dest, size_t n); */
 -FUNCTION(bcopy)
 -    ret
--
++    if (dest_size < count)
++        return ERR_OUT_OF_RANGE;
+ 
 -/* void *memcpy(void *dest, const void *src, size_t n); */
 -FUNCTION(memmove)
 -FUNCTION(memcpy)
 -    ret
--
-diff --git a/lib/libc/string/arch/x86/memset.S b/lib/libc/string/arch/x86/memset.S
-deleted file mode 100644
-index 43367f6..0000000
---- a/lib/libc/string/arch/x86/memset.S
-+++ /dev/null
-@@ -1,37 +0,0 @@
--/*
-- * Copyright (c) 2009 Corey Tabaka
-- *
-- * Permission is hereby granted, free of charge, to any person obtaining
-- * a copy of this software and associated documentation files
-- * (the "Software"), to deal in the Software without restriction,
-- * including without limitation the rights to use, copy, modify, merge,
-- * publish, distribute, sublicense, and/or sell copies of the Software,
-- * and to permit persons to whom the Software is furnished to do so,
-- * subject to the following conditions:
-- *
-- * The above copyright notice and this permission notice shall be
-- * included in all copies or substantial portions of the Software.
-- *
-- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-- * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-- */
--#include <asm.h>
--
--/* TODO: */
--
--.text
--.align 2
--
--/* void bzero(void *s, size_t n); */
--FUNCTION(bzero)
--    ret
--
--/* void *memset(void *s, int c, size_t n); */
--FUNCTION(memset)
--    ret
--
++    memcpy(dest, src, count);
+ 
++    return NO_ERROR;
++}
+diff --git a/lib/libc/string/arch/x86-64/memset.S b/lib/libc/string/arch/x86/64/memset.S
+similarity index 100%
+rename from lib/libc/string/arch/x86-64/memset.S
+rename to lib/libc/string/arch/x86/64/memset.S
+diff --git a/lib/libc/string/arch/x86-64/rules.mk b/lib/libc/string/arch/x86/64/rules.mk
+similarity index 59%
+rename from lib/libc/string/arch/x86-64/rules.mk
+rename to lib/libc/string/arch/x86/64/rules.mk
+index 3dc080bb..9f76699b 100644
+--- a/lib/libc/string/arch/x86-64/rules.mk
++++ b/lib/libc/string/arch/x86/64/rules.mk
+@@ -1,10 +1,9 @@
+ LOCAL_DIR := $(GET_LOCAL_DIR)
+ 
+-ASM_STRING_OPS := #bcopy bzero memcpy memmove memset
++ASM_STRING_OPS :=
+ 
+ MODULE_SRCS += \
+-	#$(LOCAL_DIR)/memcpy.S \
+-	#$(LOCAL_DIR)/memset.S
++	$(LOCAL_DIR)/memcpy_s.c
+ 
+ # filter out the C implementation
+ C_STRING_OPS := $(filter-out $(ASM_STRING_OPS),$(C_STRING_OPS))
 diff --git a/lib/libc/string/arch/x86/rules.mk b/lib/libc/string/arch/x86/rules.mk
-index 3dc080b..1babff9 100644
+index 3dc080bb..1babff96 100644
 --- a/lib/libc/string/arch/x86/rules.mk
 +++ b/lib/libc/string/arch/x86/rules.mk
 @@ -1,11 +1,5 @@
@@ -2593,10 +2445,10 @@ index 3dc080b..1babff9 100644
 +include $(LOCAL_DIR)/64/rules.mk
 +endif
 diff --git a/make/module.mk b/make/module.mk
-index b8aafa9..860cb09 100644
+index b8aafa91..860cb09a 100644
 --- a/make/module.mk
 +++ b/make/module.mk
-@@ -92,11 +92,31 @@
+@@ -92,11 +92,31 @@ include make/compile.mk
  ifeq (true,$(call TOBOOL,$(MODULE_STATIC_LIB)))
  
  MODULE_OBJECT := $(call TOBUILDDIR,$(MODULE_SRCDIR).mod.a)
@@ -2628,3 +2480,6 @@ index b8aafa9..860cb09 100644
  
  else
  
+-- 
+2.21.0
+

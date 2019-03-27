@@ -1,0 +1,31 @@
+From a2fd7758cfad22deec9536eee65d2b76a94a7b8e Mon Sep 17 00:00:00 2001
+From: Gang G Chen <gang.g.chen@intel.com>
+Date: Wed, 27 Mar 2019 07:16:23 +0000
+Subject: [PATCH] solve compile issue using gcc for clear linux
+
+Signed-off-by: Gang G Chen <gang.g.chen@intel.com>
+---
+ make/xbin.mk | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/make/xbin.mk b/make/xbin.mk
+index 4ef2023..39e750c 100644
+--- a/make/xbin.mk
++++ b/make/xbin.mk
+@@ -94,7 +94,12 @@ XBIN_TOOLCHAIN_PREFIX := $(ARCH_$(ARCH)_TOOLCHAIN_PREFIX)
+ else
+ XBIN_TOOLCHAIN_PREFIX := $(TOOLCHAIN_PREFIX)
+ GLOBAL_COMPILEFLAGS := $(filter-out -msoft-float,$(GLOBAL_COMPILEFLAGS))
+-GLOBAL_COMPILEFLAGS += -mstack-alignment=4
++ifeq ($(call TOBOOL,$(CLANGBUILD)), true)
++GLOBAL_COMPILEFLAGS += -mstack-alignment=32
++else
++GLOBAL_COMPILEFLAGS += -mpreferred-stack-boundary=4
++GLOBAL_COMPILEFLAGS += -mstackrealign
++endif
+ endif
+ 
+ ifeq ($(call TOBOOL,$(CLANGBUILD)), true)
+-- 
+2.21.0
+
