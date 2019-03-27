@@ -1,0 +1,283 @@
+From ffdfb1d588c9b226fab880a2ffb12a7f80531c07 Mon Sep 17 00:00:00 2001
+From: Gang G Chen <gang.g.chen@intel.com>
+Date: Mon, 25 Mar 2019 08:01:15 +0000
+Subject: [PATCH] Add keymaster library and makefile support
+
+Signed-off-by: Gang G Chen <gang.g.chen@intel.com>
+---
+ .../trusty_keymaster/ipc/keymaster_ipc.h      |  4 --
+ .../ipc/trusty_keymaster_ipc.h                |  1 +
+ trusty/keymaster/ipc/trusty_keymaster_ipc.cpp |  2 +
+ trusty/keymaster/legacy/test.mk               | 52 ++++++++++++++++
+ .../legacy/trusty_keymaster_device.cpp        |  6 +-
+ .../legacy/trusty_keymaster_main.cpp          | 12 +++-
+ trusty/keymaster/lib.mk                       | 62 +++++++++++++++++++
+ 7 files changed, 130 insertions(+), 9 deletions(-)
+ create mode 100644 trusty/keymaster/legacy/test.mk
+ create mode 100644 trusty/keymaster/lib.mk
+
+diff --git a/trusty/keymaster/include/trusty_keymaster/ipc/keymaster_ipc.h b/trusty/keymaster/include/trusty_keymaster/ipc/keymaster_ipc.h
+index 13e672573..152533007 100644
+--- a/trusty/keymaster/include/trusty_keymaster/ipc/keymaster_ipc.h
++++ b/trusty/keymaster/include/trusty_keymaster/ipc/keymaster_ipc.h
+@@ -55,8 +55,6 @@ enum keymaster_command : uint32_t {
+     KM_IMPORT_WRAPPED_KEY           = (25 << KEYMASTER_REQ_SHIFT),
+ };
+ 
+-#ifdef __ANDROID__
+-
+ /**
+  * keymaster_message - Serial header for communicating with KM server
+  * @cmd: the command, one of keymaster_command.
+@@ -66,5 +64,3 @@ struct keymaster_message {
+     uint32_t cmd;
+     uint8_t payload[0];
+ };
+-
+-#endif
+diff --git a/trusty/keymaster/include/trusty_keymaster/ipc/trusty_keymaster_ipc.h b/trusty/keymaster/include/trusty_keymaster/ipc/trusty_keymaster_ipc.h
+index 16207e6d9..4624fb8b7 100644
+--- a/trusty/keymaster/include/trusty_keymaster/ipc/trusty_keymaster_ipc.h
++++ b/trusty/keymaster/include/trusty_keymaster/ipc/trusty_keymaster_ipc.h
+@@ -22,6 +22,7 @@
+ 
+ __BEGIN_DECLS
+ 
++#define PAGE_SIZE 4096
+ const uint32_t TRUSTY_KEYMASTER_RECV_BUF_SIZE = 2 * PAGE_SIZE;
+ const uint32_t TRUSTY_KEYMASTER_SEND_BUF_SIZE =
+         (PAGE_SIZE - sizeof(struct keymaster_message) - 16 /* tipc header */);
+diff --git a/trusty/keymaster/ipc/trusty_keymaster_ipc.cpp b/trusty/keymaster/ipc/trusty_keymaster_ipc.cpp
+index 0956fe6b8..dde499fde 100644
+--- a/trusty/keymaster/ipc/trusty_keymaster_ipc.cpp
++++ b/trusty/keymaster/ipc/trusty_keymaster_ipc.cpp
+@@ -18,6 +18,8 @@
+ 
+ // TODO: make this generic in libtrusty
+ 
++#define ALOGE
++#define ALOGV
+ #include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+diff --git a/trusty/keymaster/legacy/test.mk b/trusty/keymaster/legacy/test.mk
+new file mode 100644
+index 000000000..bc6807257
+--- /dev/null
++++ b/trusty/keymaster/legacy/test.mk
+@@ -0,0 +1,52 @@
++export OUTDIR = $(BUILD_DIR)usr/bin/
++
++$(shell mkdir -p $(OUTDIR))
++
++BINARIES := keymaster_test
++
++BASE=../../../../..
++
++SUBS=system/core \
++	system/keymaster \
++	hardware/libhardware \
++	system/core/trusty/keymaster
++
++KM=$(BASE)/system/keymaster
++
++INCLUDES=$(foreach dir,$(SUBS),-I $(BASE)/$(dir)/include) \
++	-I ../libtrusty/include \
++	-I $(BASE)/system/keymaster \
++	-I ./ \
++
++LDFLAGS += -L$(BUILD_DIR)usr/lib64/ -lkeymaster -lssl -lcrypto -ltrusty
++
++COMPILER_SPECIFIC_ARGS=-std=c++0x -fPIC
++
++CPPFLAGS=$(INCLUDES) -g -O0 -MD
++CXXFLAGS= -Werror -Wno-unused -Winit-self -Wpointer-arith	-Wunused-parameter \
++	-Wno-deprecated-declarations -fno-exceptions -DKEYMASTER_NAME_TAGS \
++	-DKEYMASTER_UNIT_TEST_BUILD \
++	$(COMPILER_SPECIFIC_ARGS)
++#	-Wmissing-declarations \
++
++CPPSRCS= $(KM)/android_keymaster/keymaster_configuration.cpp \
++	$(BASE)/system/core/trusty/keymaster/legacy/trusty_keymaster_main.cpp
++
++OBJS=$(CPPSRCS:.cpp=.o) $(CCSRCS:.cc=.o) $(CSRCS:.c=.o)
++DEPS=$(CPPSRCS:.cpp=.d) $(CCSRCS:.cc=.d) $(CSRCS:.c=.d)
++GCDA=$(CPPSRCS:.cpp=.gcda) $(CCSRCS:.cc=.gcda) $(CSRCS:.c=.gcda)
++GCNO=$(CPPSRCS:.cpp=.gcno) $(CCSRCS:.cc=.gcno) $(CSRCS:.c=.gcno)
++
++.PHONY: all clean
++
++all: $(BINARIES)
++
++$(BINARIES): $(OBJS)
++	@echo --- Linking test binary $@
++	$(CXX) -o $(OUTDIR)$@ $(OBJS) $(LDFLAGS)
++
++clean:
++	@echo --- Cleaning all build artifact
++	rm -f $(OBJS) $(DEPS) $(GCDA) $(GCNO)
++	rm -f $(OUTDIR)$(BINARIES)
++
+diff --git a/trusty/keymaster/legacy/trusty_keymaster_device.cpp b/trusty/keymaster/legacy/trusty_keymaster_device.cpp
+index 88c3e7bbd..13db10ffa 100644
+--- a/trusty/keymaster/legacy/trusty_keymaster_device.cpp
++++ b/trusty/keymaster/legacy/trusty_keymaster_device.cpp
+@@ -25,18 +25,20 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <time.h>
+-
+ #include <algorithm>
+ #include <type_traits>
+ 
+ #include <hardware/keymaster2.h>
+ #include <keymaster/authorization_set.h>
+-#include <log/log.h>
+ 
+ #include <trusty_keymaster/ipc/keymaster_ipc.h>
+ #include <trusty_keymaster/ipc/trusty_keymaster_ipc.h>
+ #include <trusty_keymaster/legacy/trusty_keymaster_device.h>
+ 
++#define ALOGE
++#define ALOGD
++#define ALOGI
++
+ const size_t kMaximumAttestationChallengeLength = 128;
+ const size_t kMaximumFinishInputLength = 2048;
+ 
+diff --git a/trusty/keymaster/legacy/trusty_keymaster_main.cpp b/trusty/keymaster/legacy/trusty_keymaster_main.cpp
+index e3e70e66e..5eead8446 100644
+--- a/trusty/keymaster/legacy/trusty_keymaster_main.cpp
++++ b/trusty/keymaster/legacy/trusty_keymaster_main.cpp
+@@ -113,7 +113,7 @@ unsigned int ec_privkey_pk8_der_len = 138;
+ 
+ keymaster_key_param_t ec_params[] = {
+         keymaster_param_enum(KM_TAG_ALGORITHM, KM_ALGORITHM_EC),
+-        keymaster_param_long(KM_TAG_EC_CURVE, KM_EC_CURVE_P_521),
++        keymaster_param_long(KM_TAG_EC_CURVE, KM_EC_CURVE_P_256),
+         keymaster_param_enum(KM_TAG_PURPOSE, KM_PURPOSE_SIGN),
+         keymaster_param_enum(KM_TAG_PURPOSE, KM_PURPOSE_VERIFY),
+         keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_NONE),
+@@ -133,6 +133,7 @@ keymaster_key_param_t rsa_params[] = {
+ };
+ keymaster_key_param_set_t rsa_param_set = {rsa_params, sizeof(rsa_params) / sizeof(*rsa_params)};
+ 
++#if 0
+ struct EVP_PKEY_Delete {
+     void operator()(EVP_PKEY* p) const { EVP_PKEY_free(p); }
+ };
+@@ -140,6 +141,7 @@ struct EVP_PKEY_Delete {
+ struct EVP_PKEY_CTX_Delete {
+     void operator()(EVP_PKEY_CTX* p) { EVP_PKEY_CTX_free(p); }
+ };
++#endif
+ 
+ static bool do_operation(TrustyKeymasterDevice* device, keymaster_purpose_t purpose,
+                          keymaster_key_blob_t* key, keymaster_blob_t* input,
+@@ -253,7 +255,8 @@ static bool test_rsa(TrustyKeymasterDevice* device) {
+         return false;
+     }
+ 
+-    printf("=== Verifying with exported key ===\n");
++    printf("=== TODO: Verifying with exported key ===\n");
++#if 0
+     const uint8_t* tmp = exported_key.data;
+     std::unique_ptr<EVP_PKEY, EVP_PKEY_Delete> pkey(
+             d2i_PUBKEY(NULL, &tmp, exported_key.data_length));
+@@ -275,6 +278,7 @@ static bool test_rsa(TrustyKeymasterDevice* device) {
+     } else {
+         printf("Verification succeeded\n");
+     }
++#endif
+ 
+     printf("\n");
+     return true;
+@@ -357,7 +361,8 @@ static bool test_ecdsa(TrustyKeymasterDevice* device) {
+         return false;
+     }
+ 
+-    printf("=== Verifying with exported key ===\n");
++    printf("=== TODO:  Verifying with exported key ===\n");
++#if 0
+     const uint8_t* tmp = exported_key.data;
+     std::unique_ptr<EVP_PKEY, EVP_PKEY_Delete> pkey(
+             d2i_PUBKEY(NULL, &tmp, exported_key.data_length));
+@@ -378,6 +383,7 @@ static bool test_ecdsa(TrustyKeymasterDevice* device) {
+     } else {
+         printf("Verification succeeded\n");
+     }
++#endif
+ 
+     printf("\n");
+     return true;
+diff --git a/trusty/keymaster/lib.mk b/trusty/keymaster/lib.mk
+new file mode 100644
+index 000000000..aa1fde276
+--- /dev/null
++++ b/trusty/keymaster/lib.mk
+@@ -0,0 +1,62 @@
++export OUTDIR = $(BUILD_DIR)usr/lib64/
++
++$(shell mkdir -p $(OUTDIR))
++
++SHAREDLIB := libkeymaster.so
++STATICLIB := libkeymaster.a
++
++BASE=../../../..
++
++SUBS=system/core \
++	system/keymaster \
++	hardware/libhardware
++
++KM=$(BASE)/system/keymaster
++
++INCLUDES=$(foreach dir,$(SUBS),-I $(BASE)/$(dir)/include) \
++	-I ../libtrusty/include \
++	-I $(BASE)/system/keymaster \
++	-I $(BASE)/system/core/trusty/keymaster/include \
++
++LDFLAGS += -L$(BUILD_DIR)usr/lib64/ -ltrusty
++
++COMPILER_SPECIFIC_ARGS=-std=c++0x -fPIC
++
++CPPFLAGS=$(INCLUDES) -g -O0 -MD
++CXXFLAGS=-Werror -Wno-unused -Winit-self -Wpointer-arith	-Wunused-parameter \
++	-Wmissing-declarations \
++	-Wno-deprecated-declarations -fno-exceptions -DKEYMASTER_NAME_TAGS \
++	$(COMPILER_SPECIFIC_ARGS)
++
++CPPSRCS=\
++	$(KM)/android_keymaster/logger.cpp \
++	$(KM)/android_keymaster/serializable.cpp \
++	$(KM)/android_keymaster/authorization_set.cpp \
++	$(KM)/android_keymaster/android_keymaster_utils.cpp \
++	$(KM)/android_keymaster/android_keymaster_messages.cpp \
++	legacy/trusty_keymaster_device.cpp \
++	ipc/trusty_keymaster_ipc.cpp
++
++OBJS=$(CPPSRCS:.cpp=.o) $(CCSRCS:.cc=.o) $(CSRCS:.c=.o)
++DEPS=$(CPPSRCS:.cpp=.d) $(CCSRCS:.cc=.d) $(CSRCS:.c=.d)
++GCDA=$(CPPSRCS:.cpp=.gcda) $(CCSRCS:.cc=.gcda) $(CSRCS:.c=.gcda)
++GCNO=$(CPPSRCS:.cpp=.gcno) $(CCSRCS:.cc=.gcno) $(CSRCS:.c=.gcno)
++
++.PHONY: all clean
++
++all: $(SHAREDLIB) $(STATICLIB)
++
++$(SHAREDLIB): $(OBJS)
++	@echo --- Linking Shared library $@
++	$(CXX) -shared -o $(OUTDIR)$@ $(OBJS) $(LDFLAGS)
++
++$(STATICLIB): $(OBJS)
++	@echo --- Linking Static library $@
++	$(AR) rcs -o $(OUTDIR)$@ $(OBJS)
++
++clean:
++	@echo --- Cleaning all build artifact
++	rm -f $(OBJS) $(DEPS) $(GCDA) $(GCNO)
++	rm -f $(OUTDIR)$(SHAREDLIB)
++	rm -f $(OUTDIR)$(STATICLIB)
++
+-- 
+2.20.1
+
