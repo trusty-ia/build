@@ -1,0 +1,27 @@
+From f8fea6a6138926b5fd3cfda2291d93de6f96ff28 Mon Sep 17 00:00:00 2001
+From: Gang G Chen <gang.g.chen@intel.com>
+Date: Wed, 27 Mar 2019 02:35:47 +0000
+Subject: [PATCH] clear linux enabling on x86 for google diff
+
+use gcc instead of CLANG build
+
+Signed-off-by: Gang G Chen <gang.g.chen@intel.com>
+---
+ project/sand-x86-64.mk | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/project/sand-x86-64.mk b/project/sand-x86-64.mk
+index ca23c4e..3c12f55 100644
+--- a/project/sand-x86-64.mk
++++ b/project/sand-x86-64.mk
+@@ -58,6 +58,7 @@ WITH_CUSTOMIZED_BOOTSTRAP := true
+ # 1 page reserved for platform data, please consult hypervisor for more info
+ KERNEL_LOAD_OFFSET=0x1000
+ 
++CLANGBUILD = false
+ 
+ EXTRA_BUILDRULES += app/trusty/user-tasks.mk
+ 
+-- 
+2.21.0
+
