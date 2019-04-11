@@ -1,0 +1,165 @@
+From c2042f829075a5fa5b844a89bd31410af78e669c Mon Sep 17 00:00:00 2001
+From: Chen Gang G <gang.g.chen@intel.com>
+Date: Mon, 15 Apr 2019 10:24:20 +0800
+Subject: [PATCH] Remove used dispatch interface in Trusty Keymaster TA for
+ Clear Linux
+
+Remove the interface to reduce attack surface for security consideration
+
+Signed-off-by: Chen Gang G <gang.g.chen@intel.com>
+---
+ ipc/keymaster_ipc.cpp | 121 --------------------------------------------------
+ 1 file changed, 121 deletions(-)
+
+diff --git a/ipc/keymaster_ipc.cpp b/ipc/keymaster_ipc.cpp
+index 95d2d17..84bfb0a 100644
+--- a/ipc/keymaster_ipc.cpp
++++ b/ipc/keymaster_ipc.cpp
+@@ -414,39 +414,6 @@ static long keymaster_dispatch_non_secure(keymaster_chan_ctx* ctx,
+         return do_dispatch(&TrustyKeymaster::AddRngEntropy, msg, payload_size,
+                            out, out_size);
+ 
+-    case KM_GET_SUPPORTED_ALGORITHMS:
+-        LOG_D("Dispatching GET_SUPPORTED_ALGORITHMS, size: %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::SupportedAlgorithms, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_GET_SUPPORTED_BLOCK_MODES:
+-        LOG_D("Dispatching GET_SUPPORTED_BLOCK_MODES, size: %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::SupportedBlockModes, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_GET_SUPPORTED_PADDING_MODES:
+-        LOG_D("Dispatching GET_SUPPORTED_PADDING_MODES, size: %d",
+-              payload_size);
+-        return do_dispatch(&TrustyKeymaster::SupportedPaddingModes, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_GET_SUPPORTED_DIGESTS:
+-        LOG_D("Dispatching GET_SUPPORTED_DIGESTS, size: %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::SupportedDigests, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_GET_SUPPORTED_IMPORT_FORMATS:
+-        LOG_D("Dispatching GET_SUPPORTED_IMPORT_FORMATS, size: %d",
+-              payload_size);
+-        return do_dispatch(&TrustyKeymaster::SupportedImportFormats, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_GET_SUPPORTED_EXPORT_FORMATS:
+-        LOG_D("Dispatching GET_SUPPORTED_EXPORT_FORMATS, size: %d",
+-              payload_size);
+-        return do_dispatch(&TrustyKeymaster::SupportedExportFormats, msg,
+-                           payload_size, out, out_size);
+-
+     case KM_GET_KEY_CHARACTERISTICS:
+         LOG_D("Dispatching GET_KEY_CHARACTERISTICS, size: %d", payload_size);
+         return do_dispatch(&TrustyKeymaster::GetKeyCharacteristics, msg,
+@@ -457,104 +424,16 @@ static long keymaster_dispatch_non_secure(keymaster_chan_ctx* ctx,
+         return do_dispatch(&TrustyKeymaster::AbortOperation, msg, payload_size,
+                            out, out_size);
+ 
+-    case KM_ATTEST_KEY:
+-        LOG_D("Dispatching ATTEST_KEY, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::AttestKey, msg, payload_size, out,
+-                           out_size);
+-
+-    case KM_UPGRADE_KEY:
+-        LOG_D("Dispatching UPGRADE_KEY, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::UpgradeKey, msg, payload_size, out,
+-                           out_size);
+-
+     case KM_CONFIGURE:
+         LOG_D("Dispatching CONFIGURE, size %d", payload_size);
+         return do_dispatch(&TrustyKeymaster::Configure, msg, payload_size, out,
+                            out_size);
+ 
+-    case KM_GET_HMAC_SHARING_PARAMETERS:
+-        LOG_D("Dispatching GET_HMAC_SHARING_PARAMETERS, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::GetHmacSharingParameters, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_COMPUTE_SHARED_HMAC:
+-        LOG_D("Dispatching COMPUTE_SHARED_HMAC, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::ComputeSharedHmac, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_VERIFY_AUTHORIZATION:
+-        LOG_D("Dispatching VERIFY_AUTHORIZATION, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::VerifyAuthorization, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_IMPORT_WRAPPED_KEY:
+-        LOG_D("Dispatching IMPORT_WRAPPED_KEY, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::ImportWrappedKey, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_DELETE_KEY:
+-        LOG_D("Dispatching DELETE_KEY, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::DeleteKey, msg, payload_size, out,
+-                           out_size);
+-
+-    case KM_DELETE_ALL_KEYS:
+-        LOG_D("Dispatching DELETE_ALL_KEYS, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::DeleteAllKeys, msg, payload_size,
+-                           out, out_size);
+-
+     case KM_SET_BOOT_PARAMS:
+         LOG_D("Dispatching SET_BOOT_PARAMS, size %d", payload_size);
+         return do_dispatch(&TrustyKeymaster::SetBootParams, msg, payload_size,
+                            out, out_size);
+ 
+-    case KM_PROVISION_KEYBOX:
+-        LOG_D("Dispatching KM_PROVISION_KEYBOX, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::ProvisionAttesationKeybox, msg, payload_size,
+-                           out, out_size);
+-
+-    case KM_SET_ATTESTATION_KEY:
+-        LOG_D("Dispatching SET_ATTESTION_KEY, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::SetAttestationKey, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_APPEND_ATTESTATION_CERT_CHAIN:
+-        LOG_D("Dispatching SET_ATTESTATION_CERT_CHAIN, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::AppendAttestationCertChain, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_ATAP_GET_CA_REQUEST:
+-        LOG_D("Dispatching KM_ATAP_GET_CA_REQUEST, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::AtapGetCaRequest, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_ATAP_SET_CA_RESPONSE_BEGIN:
+-        LOG_D("Dispatching KM_ATAP_SET_CA_RESPONSE_BEGIN, size %d",
+-              payload_size);
+-        return do_dispatch(&TrustyKeymaster::AtapSetCaResponseBegin, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_ATAP_SET_CA_RESPONSE_UPDATE:
+-        LOG_D("Dispatching KM_ATAP_SET_CA_RESPONSE_UPDATE, size %d",
+-              payload_size);
+-        return do_dispatch(&TrustyKeymaster::AtapSetCaResponseUpdate, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_ATAP_SET_CA_RESPONSE_FINISH:
+-        LOG_D("Dispatching KM_ATAP_SET_CA_RESPONSE_FINISH, size %d",
+-              payload_size);
+-        return do_dispatch(&TrustyKeymaster::AtapSetCaResponseFinish, msg,
+-                           payload_size, out, out_size);
+-
+-    case KM_ATAP_READ_UUID:
+-        LOG_D("Dispatching KM_ATAP_READ_UUID, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::AtapReadUuid, msg, payload_size,
+-                           out, out_size);
+-
+-    case KM_SET_PRODUCT_ID:
+-        LOG_D("Dispatching KM_SET_PRODUCT_ID, size %d", payload_size);
+-        return do_dispatch(&TrustyKeymaster::AtapSetProductId, msg,
+-                           payload_size, out, out_size);
+-
+     default:
+         LOG_E("Cannot dispatch unknown command %d", msg->cmd);
+         return ERR_NOT_IMPLEMENTED;
+-- 
+2.7.4
+

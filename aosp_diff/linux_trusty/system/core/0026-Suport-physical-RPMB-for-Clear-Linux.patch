@@ -1,0 +1,247 @@
+From 4ea110e1aec62ff8ffd8d65e5f88b3d59dfb8a60 Mon Sep 17 00:00:00 2001
+From: Chen Gang G <gang.g.chen@intel.com>
+Date: Thu, 11 Apr 2019 16:15:39 +0800
+Subject: [PATCH] Suport physical RPMB for Clear Linux
+
+Signed-off-by: Chen Gang G <gang.g.chen@intel.com>
+---
+ trusty/storage/proxy/linux/rpmb.h | 15 ++++++++++
+ trusty/storage/proxy/proxy.c      | 55 ++++++++++++++++++++----------------
+ trusty/storage/proxy/rpmb-dev.c   | 59 +++++++++++++++++++++++++++++++++++++++
+ trusty/storage/proxy/rpmb-dev.h   |  1 +
+ trusty/storage/proxy/rpmb-sim.c   | 15 ----------
+ 5 files changed, 106 insertions(+), 39 deletions(-)
+
+diff --git a/trusty/storage/proxy/linux/rpmb.h b/trusty/storage/proxy/linux/rpmb.h
+index 98bf68c..2e1bfef 100644
+--- a/trusty/storage/proxy/linux/rpmb.h
++++ b/trusty/storage/proxy/linux/rpmb.h
+@@ -63,6 +63,21 @@ struct rpmb_frame {
+ #define hmac_data_len \
+ 	(sizeof(struct rpmb_frame) - offsetof(struct rpmb_frame, data))
+ 
++enum rpmb_request {
++    RPMB_REQ_PROGRAM_KEY                = 0x0001,
++    RPMB_REQ_GET_COUNTER                = 0x0002,
++    RPMB_REQ_DATA_WRITE                 = 0x0003,
++    RPMB_REQ_DATA_READ                  = 0x0004,
++    RPMB_REQ_RESULT_READ                = 0x0005,
++};
++
++enum rpmb_response {
++    RPMB_RESP_PROGRAM_KEY               = 0x0100,
++    RPMB_RESP_GET_COUNTER               = 0x0200,
++    RPMB_RESP_DATA_WRITE                = 0x0300,
++    RPMB_RESP_DATA_READ                 = 0x0400,
++};
++
+ /**
+  * enum rpmb_op_result - rpmb operation results
+  *
+diff --git a/trusty/storage/proxy/proxy.c b/trusty/storage/proxy/proxy.c
+index 422131e..a41ed5d 100644
+--- a/trusty/storage/proxy/proxy.c
++++ b/trusty/storage/proxy/proxy.c
+@@ -44,7 +44,7 @@
+ 
+ static uint8_t req_buffer[REQ_BUFFER_SIZE + 1];
+ 
+-static unsigned int rpmb_sim;
++static unsigned int rpmb_sim = 0;
+ 
+ static const char *ss_data_root;
+ static const char *trusty_devname;
+@@ -204,18 +204,35 @@ int main(int argc, char *argv[])
+ {
+     int rc;
+ 
+-    rc = rpmb_sim_open(RPMB_SIM_DEV_NAME);
++    __u32 write_counter;
++
++    /* parse arguments */
++    parse_args(argc, argv);
++
++    rc = rpmb_dev_open(rpmb_devname);
+     if (rc < 0) {
+-        rpmb_sim = 0;
+-        ALOGE("storage failed to open sim RPMB: %s.\n", RPMB_SIM_DEV_NAME);
+-        return EXIT_FAILURE;
+-    }
+-    else {
+-        uint8_t key[32] = {0};
+         rpmb_sim = 1;
+-        if (!is_use_sim_rpmb()) {
+-            ALOGI("storage to program key.\n");
+-            program_key(key);
++    } else {
++        rc = rpmb_get_counter(&write_counter);
++        if (rc) {
++            rpmb_sim = 1;
++            rpmb_dev_close();
++        }
++    }
++
++    if (rpmb_sim) {
++        rc = rpmb_sim_open(RPMB_SIM_DEV_NAME);
++        if (rc < 0) {
++            rpmb_sim = 0;
++            ALOGE("storage failed to open sim RPMB: %s.\n", RPMB_SIM_DEV_NAME);
++            return EXIT_FAILURE;
++        }
++        else {
++            uint8_t key[32] = {0};
++            if (!is_use_sim_rpmb()) {
++                ALOGI("storage to program key.\n");
++                program_key(key);
++            }
+         }
+     }
+ 
+@@ -224,29 +241,18 @@ int main(int argc, char *argv[])
+     else
+         ALOGI("storage use physical rpmb.\n");
+ 
+-    /* parse arguments */
+-    parse_args(argc, argv);
+-
+     /* initialize secure storage directory */
+     rc = storage_init(ss_data_root);
+     if (rc < 0) {
+         ALOGE("storage failed to storage_init.\n");
+-        return EXIT_FAILURE;
++        goto out;
+     }
+ 
+-    if (!rpmb_sim) {
+-        rpmb_sim_close();
+-        rc = rpmb_dev_open(rpmb_devname);
+-    }
+-
+-    if (rc < 0)
+-        return EXIT_FAILURE;
+-
+     /* connect to Trusty secure storage server */
+     rc = ipc_connect(trusty_devname, ss_srv_name);
+     if (rc < 0) {
+         ALOGE("storage failed to ipc_connect.\n");
+-        return EXIT_FAILURE;
++        goto out;
+     }
+ 
+     /* enter main loop */
+@@ -255,6 +261,7 @@ int main(int argc, char *argv[])
+ 
+     ipc_disconnect();
+ 
++out:
+     if (rpmb_sim)
+         rpmb_sim_close();
+     else
+diff --git a/trusty/storage/proxy/rpmb-dev.c b/trusty/storage/proxy/rpmb-dev.c
+index e116cac..54775fc 100644
+--- a/trusty/storage/proxy/rpmb-dev.c
++++ b/trusty/storage/proxy/rpmb-dev.c
+@@ -52,6 +52,65 @@ static void print_buf(const char *prefix, const uint8_t *buf, size_t size)
+ 
+ #endif /* RPMB_DEBUG */
+ 
++static inline uint16_t swap16(uint16_t val)
++{
++    return ((val & (uint16_t)0x00ffU) << 8)
++        | ((val & (uint16_t)0xff00U) >> 8);
++}
++
++static inline uint32_t swap32(uint32_t val)
++{
++    return ((val & (uint32_t)0x000000ffUL) << 24)
++        | ((val & (uint32_t)0x0000ff00UL) <<  8)
++        | ((val & (uint32_t)0x00ff0000UL) >>  8)
++        | ((val & (uint32_t)0xff000000UL) >> 24);
++}
++
++int rpmb_get_counter(__u32 *counter)
++{
++    int rc;
++    __be16 result;
++
++    struct {
++        struct rpmb_ioc_seq_cmd h;
++        struct rpmb_ioc_cmd cmd[3];
++    } iseq = {};
++    struct rpmb_frame frame_in;
++    struct rpmb_frame frame_out;
++
++    if (!counter) {
++        ALOGI("counter is NULL!\n");
++        return -1;
++    }
++
++    frame_in.req_resp = swap16(RPMB_REQ_GET_COUNTER);
++
++    iseq.cmd[0].flags = RPMB_F_WRITE;
++    iseq.cmd[0].nframes = 1;
++    iseq.cmd[0].frames_ptr = (__u64)(intptr_t)(&frame_in);
++    iseq.cmd[1].flags = 0;
++    iseq.cmd[1].nframes = 1;
++    iseq.cmd[1].frames_ptr = (__u64)(intptr_t)(&frame_out);
++    iseq.h.num_of_cmds = 2;
++
++    rc = ioctl(rpmb_fd, RPMB_IOC_SEQ_CMD, &iseq);
++
++    if (rc) {
++        ALOGE("get counter for physical rpmb failed.\n");
++        return rc;
++    }
++
++    result = swap16(frame_out.result);
++    if (result != RPMB_ERR_OK ) {
++        ALOGI("get rpmb counter failed(0x%x).\n", result);
++        return -1;
++    }
++
++    *counter = swap32(frame_out.write_counter);
++    ALOGI("rpmb counter value: 0x%x.\n", *counter);
++
++    return rc;
++}
+ 
+ int rpmb_dev_send(struct storage_msg *msg, const void *r, size_t req_len)
+ {
+diff --git a/trusty/storage/proxy/rpmb-dev.h b/trusty/storage/proxy/rpmb-dev.h
+index 4493695..e214afe 100644
+--- a/trusty/storage/proxy/rpmb-dev.h
++++ b/trusty/storage/proxy/rpmb-dev.h
+@@ -21,3 +21,4 @@
+ int rpmb_dev_open(const char *rpmb_devname);
+ int rpmb_dev_send(struct storage_msg *msg, const void *r, size_t req_len);
+ void rpmb_dev_close(void);
++int rpmb_get_counter(__u32 *counter);
+diff --git a/trusty/storage/proxy/rpmb-sim.c b/trusty/storage/proxy/rpmb-sim.c
+index b18e948..80b5223 100644
+--- a/trusty/storage/proxy/rpmb-sim.c
++++ b/trusty/storage/proxy/rpmb-sim.c
+@@ -50,21 +50,6 @@ struct rpmb_packet {
+     uint16_t             req_resp;
+ };
+ 
+-enum rpmb_request {
+-    RPMB_REQ_PROGRAM_KEY                = 0x0001,
+-    RPMB_REQ_GET_COUNTER                = 0x0002,
+-    RPMB_REQ_DATA_WRITE                 = 0x0003,
+-    RPMB_REQ_DATA_READ                  = 0x0004,
+-    RPMB_REQ_RESULT_READ                = 0x0005,
+-};
+-
+-enum rpmb_response {
+-    RPMB_RESP_PROGRAM_KEY               = 0x0100,
+-    RPMB_RESP_GET_COUNTER               = 0x0200,
+-    RPMB_RESP_DATA_WRITE                = 0x0300,
+-    RPMB_RESP_DATA_READ                 = 0x0400,
+-};
+-
+ enum rpmb_result {
+     RPMB_RES_OK                         = 0x0000,
+     RPMB_RES_GENERAL_FAILURE            = 0x0001,
+-- 
+2.7.4
+
